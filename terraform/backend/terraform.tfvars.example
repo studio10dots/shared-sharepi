@@ -1,0 +1,12 @@
+# Optional settings of an owner. Copy to terraform.tfvars only to change
+# something; the required values are the publisher's (publisher.auto.tfvars)
+# and the project and region, which are passed on the command line.
+
+# bucket_name   = "globally-unique-name"          # default: <project_id>-photos
+# admin_emails  = ["someone@gmail.com"]           # default: the account running terraform
+# max_instances = 3
+# log_retention_days = 30                       # request logs (with IP addresses); 1-3650, default 30
+
+# Optional Web build (Agents.md section 15), off by default:
+# enable_web = true
+# web_image  = "REPLACE_WITH_PUBLISHED_IMAGE" # e.g. ghcr.io/<owner>/chamagon-web:1

@@ -1,0 +1,124 @@
+name: Release backend
+
+# Publishes the owner-facing backend image to GHCR. Cloud Run pulls it
+# anonymously (through the owner's Artifact Registry remote repository), so the
+# package must be public (one-time: package settings -> change visibility).
+#
+# Normal release: merge to main. A change under backend/ or terraform/backend/
+# raises the patch number of the highest backend-vX.Y.Z tag, builds that
+# version, pushes the image and then creates the tag. Running backends compare
+# themselves with these tags (backend/updatecheck.go), so the tag is what tells
+# owners an update exists.
+#
+# Minor or major release (or the first one): git tag backend-v1.2.0 && git push origin backend-v1.2.0
+# A tag created by this workflow does not start it again (GITHUB_TOKEN pushes
+# never trigger workflows), so there is no loop.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - "terraform/backend/**"
+    tags: ["backend-v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to publish, e.g. 1.2.3 (no leading v). Empty: next patch of the highest tag."
+        required: false
+
+permissions:
+  contents: read
+
+# One release at a time, so two quick merges cannot choose the same number.
+concurrency:
+  group: release-backend
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/chamagon-backend
+  FIRST_VERSION: 0.1.0
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - run: go vet ./...
+        working-directory: backend
+      - run: go test ./...
+        working-directory: backend
+
+  publish:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # creates the backend-vX.Y.Z tag
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # all tags, to find the highest one
+
+      - id: ver
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            v="${GITHUB_REF_NAME#backend-v}"
+            tag_needed=false
+          elif [ -n "${INPUT_VERSION}" ]; then
+            v="${INPUT_VERSION}"
+            tag_needed=true
+          else
+            latest="$(git tag --list 'backend-v*' --sort=-v:refname | head -n 1)"
+            if [ -z "$latest" ]; then
+              v="${FIRST_VERSION}"
+            else
+              base="${latest#backend-v}"
+              v="${base%.*}.$(( ${base##*.} + 1 ))"
+            fi
+            tag_needed=true
+          fi
+          echo "$v" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo "bad version: $v"; exit 1; }
+          if [ "$tag_needed" = true ] && git rev-parse -q --verify "refs/tags/backend-v$v" > /dev/null; then
+            echo "tag backend-v$v already exists"; exit 1
+          fi
+          echo "full=$v" >> "$GITHUB_OUTPUT"
+          echo "major=${v%%.*}" >> "$GITHUB_OUTPUT"
+          echo "tag_needed=$tag_needed" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Cloud Run runs amd64; arm64 is included for local testing on Apple silicon.
+      - uses: docker/build-push-action@v6
+        with:
+          context: backend
+          platforms: linux/amd64,linux/arm64
+          push: true
+          provenance: true
+          build-args: |
+            VERSION=${{ steps.ver.outputs.full }}
+            REPO=${{ github.repository }}
+          tags: |
+            ${{ env.IMAGE }}:${{ steps.ver.outputs.full }}
+            ${{ env.IMAGE }}:${{ steps.ver.outputs.major }}
+
+      # After the push, so a failed build never leaves a tag that announces an
+      # image that does not exist.
+      - if: steps.ver.outputs.tag_needed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag "backend-v${{ steps.ver.outputs.full }}"
+          git push origin "backend-v${{ steps.ver.outputs.full }}"
