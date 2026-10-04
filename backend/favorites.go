@@ -12,7 +12,7 @@ import (
 // A member's favorites are personal: folders they name and the photos and videos
 // they filed in them. They live in the bucket, at {group}/members/{user_id}/
 // favorites.json, so they survive a reinstall and come back with a recovered
-// group. The backend is the only writer (Agents.md section 7): the app sends
+// group. The backend is the only writer: the app sends
 // operations, the backend applies them to the stored document with a generation
 // precondition and retries on conflict, so two devices never overwrite each other.
 //

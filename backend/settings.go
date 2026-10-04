@@ -10,7 +10,7 @@ import (
 )
 
 // The owner's settings for this backend, kept as one small object in the
-// bucket (docs/BACKEND_DESIGN.md section 17). Today they are the limits on
+// bucket (docs/BACKEND_DESIGN.md, "Owner settings"). Today they are the limits on
 // videos: the app asks for them before it uploads a video and offers the
 // user a choice (or refuses) when the video is over them.
 const settingsObject = "_backend/settings.json"
@@ -24,8 +24,7 @@ const settingsTTL = 30 * time.Second
 //
 //   - MaxSeconds / MaxBytes: a longer or larger video is not uploaded. The
 //     backend enforces MaxBytes itself (it is part of the signed upload URL);
-//     it cannot see a video's length, so MaxSeconds is the app's check, like
-//     the plan limits (Agents.md section 20).
+//     it cannot see a video's length, so MaxSeconds is the app's check.
 //   - ConfirmSeconds / ConfirmBytes: over these the app asks the user whether
 //     to upload the video as it is or compressed.
 type VideoSettings struct {
@@ -108,7 +107,7 @@ func (s *Server) getSettings(w http.ResponseWriter, r *http.Request, id Identity
 
 // putSettings replaces the settings. Only the backend's administrators may. The
 // object is the single writer's (this endpoint's), written with a generation
-// precondition like every shared object (Agents.md section 7).
+// precondition like every shared object.
 func (s *Server) putSettings(w http.ResponseWriter, r *http.Request, id Identity) {
 	if !s.isAdmin(id) {
 		writeErr(w, http.StatusForbidden, "administrator only")

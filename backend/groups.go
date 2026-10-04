@@ -141,7 +141,7 @@ func (s *Server) removeMember(w http.ResponseWriter, r *http.Request, id Identit
 			if ro.Members[i].UserID == target {
 				// A member who already left has no identity left to remove; keep it that way.
 				// A suspended member can be removed too: the administrator trims a
-				// suspended group's members to bring it back within the plan.
+				// suspended group's members to bring it back within a smaller size.
 				if st := ro.Members[i].Status; st == "active" || st == "suspended" {
 					ro.Members[i].Status = "removed"
 				}
@@ -161,7 +161,7 @@ func (s *Server) removeMember(w http.ResponseWriter, r *http.Request, id Identit
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// leaveGroup erases the caller's identity from the roster (ADR-013). The row stays
+// leaveGroup erases the caller's identity from the roster. The row stays
 // with only user_id and joined_at, so their photos remain attributed to a "left
 // member"; joining again later creates a new row with a new user_id. A second call
 // gets 404, like any non-member: the row no longer carries who the caller was.

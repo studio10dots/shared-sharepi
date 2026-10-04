@@ -20,8 +20,8 @@ var (
 )
 
 // UpdateNotice tells an administrator a newer backend image has been
-// published; they update it themselves by re-running Terraform
-// (Agents.md section 8, "backend/app API version mismatch").
+// published; they update it themselves by running the setup command again
+// (docs/SETUP.md).
 type UpdateNotice struct {
 	Version string `json:"version"`
 }
@@ -53,7 +53,7 @@ func (s *Server) checkForUpdateAsync(hc *http.Client) {
 // other caller (on this instance, for the rest of its life) gets nil. A
 // second Cloud Run instance runs its own check and may hand out its own
 // notice; the app dedupes by version in its local database, the same way it
-// already dedupes report notifications (Agents.md section 9).
+// already dedupes report notifications.
 func (s *Server) consumeUpdateNotice() *UpdateNotice {
 	return s.updateNotice.Swap(nil)
 }

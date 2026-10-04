@@ -6,9 +6,9 @@ import (
 )
 
 // stopSharing suspends every active member except the caller's own row and marks
-// the group suspended (docs/BACKEND_DESIGN.md section 14). Rows and user_ids are
-// kept, so restoring needs no member action. The administrator's app calls this
-// when a plan lapsed; the backend knows nothing about plans. Idempotent.
+// the group suspended. Rows and user_ids are kept, so restoring needs no member
+// action. The administrator's app calls this when it decides to stop sharing in
+// the group; the backend only keeps the resulting state. Idempotent.
 func (s *Server) stopSharing(w http.ResponseWriter, r *http.Request, id Identity, g string, _ Roster) {
 	_, err := s.updateRoster(r.Context(), g, func(ro *Roster) error {
 		ro.Sharing = "suspended"
@@ -29,7 +29,7 @@ func (s *Server) stopSharing(w http.ResponseWriter, r *http.Request, id Identity
 
 // restoreSharing makes suspended members active again: all of them, or only the
 // listed user_ids. The group stops being suspended once none is left suspended.
-// The app decides what the plan allows. Idempotent.
+// The administrator's app decides when. Idempotent.
 func (s *Server) restoreSharing(w http.ResponseWriter, r *http.Request, id Identity, g string, _ Roster) {
 	var req struct {
 		UserIDs []string `json:"user_ids"`

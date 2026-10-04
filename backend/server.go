@@ -66,7 +66,7 @@ type Config struct {
 	MaxUploadSize int64
 
 	// WebOrigin is the one browser origin allowed to call this backend
-	// (its own Web build's Cloud Run URL, Agents.md section 15); empty
+	// (its own Web build's Cloud Run URL); empty
 	// disables all browser (CORS) access. See cors.go.
 	WebOrigin string
 
@@ -120,8 +120,8 @@ type Roster struct {
 	Version     int    `json:"version"`
 	DisplayName string `json:"display_name"`
 	CreatedAt   string `json:"created_at"`
-	// Sharing is "suspended" while sharing is stopped because the administrator's
-	// plan lapsed (docs/BACKEND_DESIGN.md section 14); empty otherwise.
+	// Sharing is "suspended" while the administrator's app has stopped sharing in
+	// the group; empty otherwise.
 	Sharing string   `json:"sharing,omitempty"`
 	Members []Member `json:"members"`
 }
@@ -391,7 +391,7 @@ func (s *Server) dropCachedRoster(g string) {
 
 // updateRoster is the only place a roster is rewritten. It reads, applies fn and
 // writes with a generation precondition, retrying when another writer got there
-// first (Agents.md section 7).
+// first.
 func (s *Server) updateRoster(ctx context.Context, g string, fn func(*Roster) error) (Roster, error) {
 	defer s.dropCachedRoster(g)
 	for range 6 {

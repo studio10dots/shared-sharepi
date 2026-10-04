@@ -7,6 +7,6 @@
 # max_instances = 3
 # log_retention_days = 30                       # request logs (with IP addresses); 1-3650, default 30
 
-# Optional Web build (Agents.md section 15), off by default:
+# Optional Web build, off by default:
 # enable_web = true
 # web_image  = "REPLACE_WITH_PUBLISHED_IMAGE" # e.g. ghcr.io/<owner>/chamagon-web:1

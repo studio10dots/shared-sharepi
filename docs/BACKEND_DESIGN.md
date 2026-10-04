@@ -104,7 +104,6 @@ Conditions.
 - The date is deliberately not part of any path: changing an event's date overwrites `event.json` and
   moves nothing. The event listing reads `event.json`, so an event exists only if that object is present and valid
   (`name` 1-64 characters, `date` a real `YYYY/MM/DD`); folders without one are ignored.
-- The naming convention is in `Agents.md` section 3.
 - The bucket has uniform bucket-level access, public access prevention, 30-day soft delete and
   **Autoclass**. Objects under 128 KiB (thumbnails) stay in Standard; originals cool down as they
   stop being read. Only the backend's service account has access to the bucket.
@@ -263,7 +262,7 @@ Multiple Cloud Run instances (or a restart) each run their own check and could s
 same version more than once across calls; rather than making the backend stateful to prevent that,
 the app dedupes by version number in its own local database, the same way it already dedupes report
 notifications — an accepted trade-off for keeping the backend's
-"no database" rule (Agents.md section 1) intact.
+"no database" rule intact.
 
 ### Moderation, leaving and deletion
 
@@ -300,7 +299,7 @@ account/data deletion. The publisher runs no server, so all of it lives on the o
 ### Signed URLs
 
 - Signed by the backend's service account through the IAM Credentials `signBlob` API — **no key
-  file exists anywhere** (`Agents.md` section 13).
+  file exists anywhere**.
 - The backend builds every object path itself from `group_id` and the validated event and
   `photo_id`. A client cannot name a path outside its group.
 - Upload URLs are `PUT`, bound to `Content-Type`, `x-goog-meta-uploader` and
@@ -348,7 +347,7 @@ Cloud Run scales to zero and stops an idle instance after about 15 minutes. The 
   The app and backend need not share a stack.
 - Lives in `backend/`. Depends on the Google Cloud Storage, IAM Credentials and ID-token
   verification libraries; each dependency is justified in its own commit.
-- Stateless. No database; the only state is objects in the bucket (`Agents.md` section 7).
+- Stateless. No database; the only state is objects in the bucket.
 - Config by environment variables: `BUCKET`, `GOOGLE_CLIENT_ID`, `ADMIN_EMAILS`,
   `SIGNER_SERVICE_ACCOUNT`.
 
@@ -488,8 +487,7 @@ always the signed URL's own expiry, already gone within minutes.
 
 A video is by far the largest thing a member uploads, so the owner — who pays for the storage — sets
 how large and how long one may be. The settings are one small object, `_backend/settings.json`,
-written only by `PUT /v1/settings` with a generation precondition (single writer, Agents.md section
-7). A backend that was never configured uses the defaults below.
+written only by `PUT /v1/settings` with a generation precondition (single writer). A backend that was never configured uses the defaults below.
 
 ```text
 {"version": 1, "video": {"max_seconds": 300, "max_bytes": 0, "confirm_seconds": 120, "confirm_bytes": 0}}

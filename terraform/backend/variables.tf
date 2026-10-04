@@ -67,7 +67,7 @@ variable "soft_delete_retention_seconds" {
 }
 
 variable "enable_web" {
-  description = "Also host the Flutter Web build on Cloud Run (optional, off by default; Agents.md section 15)."
+  description = "Also host the Flutter Web build on Cloud Run (optional, off by default)."
   type        = bool
   default     = false
 }

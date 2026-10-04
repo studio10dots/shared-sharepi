@@ -54,7 +54,7 @@ func shareManifestPath(g, shareID string) string {
 // them into a manifest object and returns a single signed URL to that
 // manifest. The manifest's expiry, not group membership, is what limits who
 // can still see the photos: the same trade-off invitations already make
-// (docs/BACKEND_DESIGN.md section 6).
+// (docs/BACKEND_DESIGN.md, "Invitations").
 func (s *Server) createShare(w http.ResponseWriter, r *http.Request, id Identity, g string, _ Member) {
 	var req struct {
 		Items      []shareItemReq `json:"items"`
@@ -127,7 +127,7 @@ func (s *Server) createShare(w http.ResponseWriter, r *http.Request, id Identity
 	shareID := newUUID()
 	name := shareManifestPath(g, shareID)
 	// create-if-absent: the id is a fresh UUID, so this never conflicts in
-	// practice; a lifecycle rule (Agents.md section 3) cleans the object up
+	// practice; a bucket lifecycle rule (terraform/backend/main.tf) cleans the object up
 	// later regardless of whether anyone ever reads it.
 	if _, err := s.store.Write(r.Context(), name, body, gen(createOnly)); err != nil {
 		writeErr(w, http.StatusBadGateway, "storage error")
