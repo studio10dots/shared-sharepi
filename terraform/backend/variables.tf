@@ -1,0 +1,96 @@
+variable "project_id" {
+  description = "Your GCP project ID (billing must be enabled)."
+  type        = string
+
+  # Same rule as Google's: 6-30 characters, lowercase letters, digits and
+  # hyphens, starting with a letter and not ending with a hyphen.
+  validation {
+    condition     = can(regex("^[a-z][a-z0-9-]{4,28}[a-z0-9]$", var.project_id))
+    error_message = "project_id must be the project's ID (6-30 lowercase letters, digits or hyphens), not its display name."
+  }
+}
+
+variable "region" {
+  description = "Region for the bucket and the Cloud Run service."
+  type        = string
+  default     = "asia-northeast1"
+}
+
+variable "backend_image" {
+  description = "Container image of the backend, published by the project maintainer (publisher.auto.tfvars)."
+  type        = string
+
+  validation {
+    condition     = !startswith(var.backend_image, "REPLACE_WITH")
+    error_message = "backend_image is not set in publisher.auto.tfvars yet: the app's publisher has to fill it in."
+  }
+}
+
+variable "google_client_id" {
+  description = "The app publisher's Web OAuth client ID. Public; the backend only accepts ID tokens issued for it (publisher.auto.tfvars)."
+  type        = string
+
+  validation {
+    condition     = !startswith(var.google_client_id, "REPLACE_WITH")
+    error_message = "google_client_id is not set in publisher.auto.tfvars yet: the app's publisher has to fill it in."
+  }
+}
+
+variable "bucket_name" {
+  description = "Globally unique bucket name. Defaults to \"<project_id>-photos\"."
+  type        = string
+  default     = null
+}
+
+variable "admin_emails" {
+  description = "Google accounts that may create groups and invite people. Defaults to the account running Terraform."
+  type        = list(string)
+  default     = []
+}
+
+variable "max_instances" {
+  description = "Upper bound on Cloud Run instances. Caps the bill if the public endpoint is flooded."
+  type        = number
+  default     = 3
+}
+
+variable "deletion_protection" {
+  description = "Refuse `terraform destroy` of the Cloud Run services (the provider's own default since 6.x), as a guard against deleting a live backend by mistake. To remove them, set this to false, run `terraform apply`, then `terraform destroy`: the value is read from the saved state, so passing false only on the destroy command is not enough."
+  type        = bool
+  default     = true
+}
+
+variable "soft_delete_retention_seconds" {
+  description = "How long a deleted photo stays recoverable (default 30 days, GCS maximum 90)."
+  type        = number
+  default     = 2592000
+}
+
+variable "enable_web" {
+  description = "Also host the Flutter Web build on Cloud Run (optional, off by default; Agents.md section 15)."
+  type        = bool
+  default     = false
+}
+
+variable "web_image" {
+  description = "Container image of the Web static build, published by the project maintainer. Required when enable_web is true."
+  type        = string
+  default     = null
+}
+
+variable "web_origin_override" {
+  description = "Override for the Web build's own origin, if Cloud Run's predictable URL format (https://chamagon-web-<project number>.<region>.run.app) ever does not hold for your project. Only used when enable_web is true."
+  type        = string
+  default     = null
+}
+
+variable "log_retention_days" {
+  description = "How long Cloud Logging keeps this project's logs, including Cloud Run request logs (which contain callers' IP addresses). 30 is Google's default; raise it if you need to answer legal requests later (1-3650)."
+  type        = number
+  default     = 30
+
+  validation {
+    condition     = var.log_retention_days >= 1 && var.log_retention_days <= 3650
+    error_message = "log_retention_days must be between 1 and 3650."
+  }
+}
