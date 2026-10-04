@@ -157,13 +157,33 @@ func isVideoExt(ext string) bool {
 	return strings.HasPrefix(contentTypeFor(ext), "video/")
 }
 
-// uploadLimit is the size limit signed into an original's upload URL: the
-// backend's own, or the owner's video limit when that is lower.
-func (s *Server) uploadLimit(ctx context.Context, ext string) (int64, error) {
-	limit := s.cfg.MaxUploadSize
-	if !isVideoExt(ext) {
-		return limit, nil
+// capped returns limit, lowered to the backend's overall upload size when that
+// is set and smaller. A zero limit means "no tighter than the overall one".
+func (s *Server) capped(limit int64) int64 {
+	all := s.cfg.MaxUploadSize
+	if limit <= 0 || (all > 0 && limit > all) {
+		return all
 	}
+	return limit
+}
+
+// derivativeLimit is the size limit signed into a thumbnail's or a medium
+// image's upload URL.
+func (s *Server) derivativeLimit(kind string) int64 {
+	if kind == "thumbnail" {
+		return s.capped(s.cfg.MaxThumbnailSize)
+	}
+	return s.capped(s.cfg.MaxMediumSize)
+}
+
+// uploadLimit is the size limit signed into an original's upload URL: for a
+// photo the backend's photo limit, for a video its overall limit or the owner's
+// video limit when that is lower.
+func (s *Server) uploadLimit(ctx context.Context, ext string) (int64, error) {
+	if !isVideoExt(ext) {
+		return s.capped(s.cfg.MaxImageSize), nil
+	}
+	limit := s.cfg.MaxUploadSize
 	st, err := s.loadSettings(ctx)
 	if err != nil {
 		return 0, err

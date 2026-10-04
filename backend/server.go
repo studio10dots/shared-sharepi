@@ -59,11 +59,20 @@ type Signer interface {
 }
 
 type Config struct {
-	AdminEmails   map[string]bool
-	PublicURL     string // this backend's own URL; derived from the request when empty
-	DownloadTTL   time.Duration
-	UploadTTL     time.Duration
-	MaxUploadSize int64
+	AdminEmails map[string]bool
+	PublicURL   string // this backend's own URL; derived from the request when empty
+	DownloadTTL time.Duration
+	UploadTTL   time.Duration
+	// MaxUploadSize is the largest object any upload URL allows (a video's
+	// original may use all of it). The three below are tighter limits for what is
+	// not a video: a thumbnail is a few KB, a medium image a few MB, a photo
+	// original some tens of MB. Zero means no tighter limit than MaxUploadSize.
+	// They exist because a member holds a signed URL for each upload, and the
+	// owner pays for whatever is stored through it.
+	MaxUploadSize    int64
+	MaxThumbnailSize int64
+	MaxMediumSize    int64
+	MaxImageSize     int64
 
 	// WebOrigin is the one browser origin allowed to call this backend
 	// (its own Web build's Cloud Run URL); empty

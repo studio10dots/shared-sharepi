@@ -427,6 +427,27 @@ type uploadReq struct {
 	Compressed bool `json:"compressed"`
 }
 
+// maxUploadKinds is how many upload URLs one request may ask for: an item has
+// an original, a medium image and a thumbnail.
+const maxUploadKinds = 3
+
+// heldByAnother reports whether an object of this item and kind already exists
+// that somebody other than userID uploaded. An object without an uploader (one
+// that predates the field) counts as someone else's: nobody may silently
+// replace what the backend cannot attribute.
+func (s *Server) heldByAnother(ctx context.Context, g, eventID, kind, photoID, userID string) (bool, error) {
+	l, err := s.store.List(ctx, eventPrefix(g, eventID)+kind+"/"+photoID+".", "", true)
+	if err != nil {
+		return false, err
+	}
+	for _, o := range l.Objects {
+		if o.Metadata["uploader"] != userID {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 type signedURL struct {
 	URL     string            `json:"url"`
 	Headers map[string]string `json:"headers,omitempty"`
@@ -437,8 +458,10 @@ func (s *Server) uploads(w http.ResponseWriter, r *http.Request, id Identity, g 
 	if !decode(w, r, &req) {
 		return
 	}
+	// At most one URL per kind: each one is a signing call to the IAM Credentials
+	// API, whose quota every group on this backend shares.
 	if !photoIDRe.MatchString(req.PhotoID) || !extRe.MatchString(req.Ext) ||
-		!validEventID(req.EventID) || len(req.Kinds) == 0 {
+		!validEventID(req.EventID) || len(req.Kinds) == 0 || len(req.Kinds) > maxUploadKinds {
 		writeErr(w, http.StatusUnprocessableEntity, "invalid item")
 		return
 	}
@@ -464,6 +487,19 @@ func (s *Server) uploads(w http.ResponseWriter, r *http.Request, id Identity, g 
 			writeErr(w, http.StatusUnprocessableEntity, "invalid kind")
 			return
 		}
+		if _, done := out[kind]; done {
+			continue // the same kind twice: one URL is enough
+		}
+		// An upload replaces whatever is at the path, so refuse to sign one over an
+		// object another member (or an unknown uploader) put there: a retry of
+		// one's own upload is the only overwrite that is legitimate.
+		if held, err := s.heldByAnother(r.Context(), g, req.EventID, kind, req.PhotoID, me.UserID); err != nil {
+			writeErr(w, http.StatusBadGateway, "storage error")
+			return
+		} else if held {
+			writeErr(w, http.StatusConflict, "item_exists")
+			return
+		}
 		obj := eventPrefix(g, req.EventID) + kind + "/" + req.PhotoID + "." + ext
 		// The uploader is part of the signature, so it cannot be forged.
 		meta := map[string]string{"uploader": me.UserID}
@@ -473,7 +509,7 @@ func (s *Server) uploads(w http.ResponseWriter, r *http.Request, id Identity, g 
 		if kind == "original" && req.Compressed {
 			meta["compressed"] = "true"
 		}
-		maxSize := s.cfg.MaxUploadSize
+		maxSize := s.derivativeLimit(kind)
 		if kind == "original" {
 			var err error
 			if maxSize, err = s.uploadLimit(r.Context(), req.Ext); err != nil {

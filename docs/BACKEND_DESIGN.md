@@ -235,7 +235,7 @@ invite to it and remove members, but cannot list its photos.
 | `GET /v1/groups/{g}/trash` | member | Soft-deleted media of the group still inside the retention window: `objects: [{path, generation, deleted_at}]`, only media objects (never the roster, invitations or reports); plus `events: [{id, name, date, restore?}]`, one entry per event any of those objects belong to, so the client can show each item's destination — `name`/`date` come from the event's live `event.json`, or, if that too was deleted, from the newest deleted copy, in which case `restore` names it (`{path, generation}`) so restoring it brings the event back along with its items. |
 | `GET /v1/groups/{g}/trash/thumbnail` | member | `?path=&generation=` -> the raw JPEG bytes of one deleted item's thumbnail. A soft-deleted object has no signed URL, so this is the one place photo bytes pass through the backend; `path` must be a thumbnail object of the caller's group. |
 | `POST /v1/groups/{g}/trash/restore` | member | `{objects: [{path, generation}]}` (at most 50) -> restores them, derivatives first, the original next, and a deleted `event.json` last. `404` once past the retention window. |
-| `POST /v1/groups/{g}/uploads` | member | `{event_id, photo_id, ext, kinds}` -> signed PUT URLs for thumbnail, medium (a video's is its first frame) and original. `event_name` + `event_date`, when both are sent and valid, also create the event's `event.json` if it is missing (create-only), so an upload to an event whose creation call never got through still shows under its name. |
+| `POST /v1/groups/{g}/uploads` | member | `{event_id, photo_id, ext, kinds}` -> signed PUT URLs for thumbnail, medium (a video's is its first frame) and original. `event_name` + `event_date`, when both are sent and valid, also create the event's `event.json` if it is missing (create-only), so an upload to an event whose creation call never got through still shows under its name. At most 3 kinds (one URL each; a repeated kind is signed once, more than 3 entries is `422`). `409 item_exists` when an object of that item already exists that another member uploaded (see "Signed URLs"). |
 | `POST /v1/groups/{g}/downloads` | member | Batch of object paths -> signed GET URLs. |
 | `DELETE /v1/groups/{g}/events/{id}/items/{photo_id}` | member | Soft-delete the item's original, medium and thumbnail (`204`; `404` if the original is gone). |
 | `POST /v1/groups/{g}/shares` | member | `{items: [{event_id, photo_id, ext}], ttl_minutes: 5\|10\|15}` (1-30 items, default 10) -> `{share_id, url, expires_at}` (section 16). |
@@ -303,9 +303,19 @@ account/data deletion. The publisher runs no server, so all of it lives on the o
 - The backend builds every object path itself from `group_id` and the validated event and
   `photo_id`. A client cannot name a path outside its group.
 - Upload URLs are `PUT`, bound to `Content-Type`, `x-goog-meta-uploader` and
-  `x-goog-content-length-range` (so a URL cannot be reused for a larger file). Videos use a
+  `x-goog-content-length-range` (so a URL cannot be reused for a larger file). The size range
+  follows what the object is: a thumbnail up to 1 MiB, a medium image up to 16 MiB, a photo
+  original up to 256 MiB, and a video original up to the backend's 5 GiB (or the owner's lower
+  video limit, section 17). Whoever holds an upload URL is paid for by the owner, so none is
+  larger than its kind needs. Videos use a
   resumable upload: the URL is a signed `POST` with `x-goog-resumable: start`, and the client
   continues on the session URI it gets back.
+- An upload replaces whatever is at the path, so the backend refuses to sign one over an object
+  of the same item and kind that another member uploaded (`409 item_exists`). An object with no
+  recorded uploader counts as someone else's. The uploader of an item may sign again (a retry
+  overwrites its own derivatives).
+- A request asks for at most three URLs (original, medium, thumbnail): each is a call to the IAM
+  Credentials `signBlob` API, whose quota every group on the backend shares.
 - Download URLs are batched (`downloads` takes up to N paths) and used for **thumbnails, medium
   images and videos alike**. They are only needed on a device cache miss, so a grid full of cached
   thumbnails signs nothing. Default lifetime 1 hour; the app fetches a fresh URL if one has expired.

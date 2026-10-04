@@ -44,13 +44,16 @@ func main() {
 		}
 	}
 	srv := NewServer(Config{
-		AdminEmails:   admins,
-		PublicURL:     strings.TrimRight(os.Getenv("PUBLIC_URL"), "/"),
-		DownloadTTL:   time.Hour,
-		UploadTTL:     15 * time.Minute,
-		MaxUploadSize: 5 << 30,
-		MaxEventItems: 9999,
-		RosterTTL:     5 * time.Second,
+		AdminEmails:      admins,
+		PublicURL:        strings.TrimRight(os.Getenv("PUBLIC_URL"), "/"),
+		DownloadTTL:      time.Hour,
+		UploadTTL:        15 * time.Minute,
+		MaxUploadSize:    5 << 30,
+		MaxThumbnailSize: 1 << 20,
+		MaxMediumSize:    16 << 20,
+		MaxImageSize:     256 << 20,
+		MaxEventItems:    9999,
+		RosterTTL:        5 * time.Second,
 		// Unset (the default) disables all browser access; Terraform sets it
 		// only when enable_web = true, to that Web service's own URL.
 		WebOrigin: strings.TrimRight(os.Getenv("WEB_ORIGIN"), "/"),
