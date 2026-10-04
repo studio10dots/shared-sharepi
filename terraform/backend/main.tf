@@ -143,6 +143,10 @@ resource "google_cloud_run_v2_service" "backend" {
         name  = "WEB_ORIGIN"
         value = local.web_origin
       }
+      env {
+        name  = "REQUIRE_TOKEN_BINDING"
+        value = var.require_token_binding ? "true" : "false"
+      }
     }
   }
 

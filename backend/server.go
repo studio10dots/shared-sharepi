@@ -31,6 +31,10 @@ type Identity struct {
 	RawSub        string
 	Email         string
 	EmailVerified bool
+	// Nonce is the token's nonce claim: what the app asked Google to put in it.
+	// An app that binds its tokens to one backend (see tokenBinding) puts a value
+	// there that only that backend accepts.
+	Nonce string
 }
 
 // Verifier checks a bearer ID token. It is an interface so tests need no Google.
@@ -40,9 +44,7 @@ type Verifier interface {
 
 // SignRequest describes one signed URL. ContentType, Metadata and MaxSize are
 // PUT-only: the signer turns them into whatever headers its cloud needs
-// (e.g. Content-Type, x-goog-meta-*/x-amz-meta-*, a size-range condition),
-// since the exact header names and what can be enforced this way differ
-// between clouds (see gcsSigner and s3Signer).
+// (e.g. Content-Type, x-goog-meta-*, a size-range condition); see gcsSigner.
 type SignRequest struct {
 	Object      string
 	Method      string // GET or PUT
@@ -82,6 +84,11 @@ type Config struct {
 	// MaxEventItems is the most photos and videos one event may hold.
 	MaxEventItems int
 	RosterTTL     time.Duration
+
+	// RequireTokenBinding refuses an ID token that carries no nonce for this
+	// backend. A token that carries a nonce for another backend is always refused,
+	// whatever this says: that is a token someone is replaying. See tokenBinding.
+	RequireTokenBinding bool
 }
 
 type Server struct {
@@ -275,6 +282,10 @@ func (s *Server) auth(next handler) http.HandlerFunc {
 			writeErr(w, http.StatusUnauthorized, "invalid token")
 			return
 		}
+		if !s.tokenBoundHere(id, r) {
+			writeErr(w, http.StatusUnauthorized, "invalid token")
+			return
+		}
 		id.RawSub = id.Sub
 		if id.Sub, err = s.hashSub(r.Context(), id.RawSub); err != nil {
 			writeErr(w, http.StatusBadGateway, "storage error")
@@ -282,6 +293,31 @@ func (s *Server) auth(next handler) http.HandlerFunc {
 		}
 		next(w, r, id)
 	}
+}
+
+// tokenBinding is the nonce an app asks Google to put into an ID token meant for
+// one backend: the unpadded base64url of SHA-256("sharepi-backend:" + host),
+// where host is the lower-cased host (with the port when it is not the default)
+// of the URL the app talks to, exactly as it arrives in the Host header.
+//
+// Every backend accepts tokens issued for the same OAuth client, so without this
+// a backend that is handed a member's token (every backend is, on each call)
+// could replay it against any other backend the member uses, and against the
+// owner's own backend if the member is its administrator. A token whose nonce
+// names this backend's host is useless anywhere else.
+func tokenBinding(host string) string {
+	sum := sha256.Sum256([]byte("sharepi-backend:" + strings.ToLower(host)))
+	return b64.EncodeToString(sum[:])
+}
+
+// tokenBoundHere reports whether the token may be used on this request's host.
+// A nonce that names another host is always refused; a token without one is
+// refused only when the owner required binding.
+func (s *Server) tokenBoundHere(id Identity, r *http.Request) bool {
+	if id.Nonce == "" {
+		return !s.cfg.RequireTokenBinding
+	}
+	return hmac.Equal([]byte(id.Nonce), []byte(tokenBinding(r.Host)))
 }
 
 func (s *Server) isAdmin(id Identity) bool { return s.cfg.AdminEmails[strings.ToLower(id.Email)] }

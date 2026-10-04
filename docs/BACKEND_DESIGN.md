@@ -74,6 +74,33 @@ A non-member asking about a group gets `404`, the same as for a group that does 
 Identity is fixed to the Google account. Changing the account in the profile screen drops that
 account's groups from the device; the new account must be invited again.
 
+### Token binding
+
+Every backend accepts ID tokens issued for the same OAuth client (the publisher's), and the app
+sends its token to every backend it uses. Without more, a backend that receives a member's token
+could replay it, within its hour of validity, against any other backend that member uses; against
+the member's own backend if the member is its administrator, that is an administrator takeover.
+
+So the app asks Google to put a **nonce** into the token that names the one backend it is for:
+
+```text
+nonce = base64url_no_padding( SHA-256( "sharepi-backend:" + host ) )
+```
+
+`host` is the lower-cased host of the URL the app talks to, with the port only when it is not the
+default, exactly as it arrives in the `Host` header (Cloud Run has more than one URL for a service,
+so the backend compares what it was called with rather than a configured URL). The backend
+recomputes it from the request's `Host` and compares it with the token's `nonce` claim:
+
+- a `nonce` that is not this host's binding is **always** refused (`401`): it is a token meant for
+  another backend;
+- a token with no `nonce` is accepted unless `REQUIRE_TOKEN_BINDING=true` (Terraform's
+  `require_token_binding`), which turns binding on for every request. It is off by default until
+  the app sends bound tokens.
+
+Binding does not hide the token from a backend that receives it, and the backend still learns the
+member's email address from it; it only makes the token useless anywhere else.
+
 ## 4. Bucket layout
 
 One bucket per backend. Groups are prefixes; isolation is enforced by the backend, not by IAM

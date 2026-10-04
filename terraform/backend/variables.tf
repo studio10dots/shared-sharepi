@@ -60,6 +60,12 @@ variable "deletion_protection" {
   default     = true
 }
 
+variable "require_token_binding" {
+  description = "Refuse sign-in tokens that are not bound to this backend (docs/BACKEND_DESIGN.md, \"Token binding\"). A token bound to another backend is always refused; this also refuses one with no binding. Leave false until the app sends bound tokens."
+  type        = bool
+  default     = false
+}
+
 variable "soft_delete_retention_seconds" {
   description = "How long a deleted photo stays recoverable (default 30 days, GCS maximum 90)."
   type        = number
