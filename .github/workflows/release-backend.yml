@@ -102,7 +102,7 @@ jobs:
       # Cloud Run runs amd64. arm64 was dropped: building it under QEMU emulation
       # made the release take 13 minutes. Add it back (with setup-qemu-action) if
       # an arm64 image is ever needed.
-      - uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@v7
         with:
           context: backend
           platforms: linux/amd64
