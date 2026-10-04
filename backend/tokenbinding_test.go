@@ -53,6 +53,18 @@ func TestTheHostIsComparedWithoutRegardToCase(t *testing.T) {
 	want(t, e.callAt("A.Example.Run.App", "bound-a"), 200)
 }
 
+func TestADefaultPortInTheHostIsIgnored(t *testing.T) {
+	e := boundEnv(t, true)
+	want(t, e.callAt("a.example.run.app:443", "bound-a"), 200)
+	if tokenBinding("a.example.run.app:443") != tokenBinding("a.example.run.app") ||
+		tokenBinding("a.example.run.app:80") != tokenBinding("a.example.run.app") {
+		t.Error("a default port changed the binding")
+	}
+	if tokenBinding("a.example.run.app:8080") == tokenBinding("a.example.run.app") {
+		t.Error("a non-default port did not change the binding")
+	}
+}
+
 func TestATokenWithNoNonceIsAcceptedOnlyUntilBindingIsRequired(t *testing.T) {
 	want(t, boundEnv(t, false).callAt("a.example.run.app", "unbound"), 200)
 	want(t, boundEnv(t, true).callAt("a.example.run.app", "unbound"), 401)

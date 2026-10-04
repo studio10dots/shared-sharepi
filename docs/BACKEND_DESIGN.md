@@ -87,8 +87,8 @@ So the app asks Google to put a **nonce** into the token that names the one back
 nonce = base64url_no_padding( SHA-256( "sharepi-backend:" + host ) )
 ```
 
-`host` is the lower-cased host of the URL the app talks to, with the port only when it is not the
-default, exactly as it arrives in the `Host` header (Cloud Run has more than one URL for a service,
+`host` is the lower-cased host of the URL the app talks to, as it arrives in the `Host` header, with
+a default port (`:443`, `:80`) left out on both sides because HTTP clients differ on sending one (Cloud Run has more than one URL for a service,
 so the backend compares what it was called with rather than a configured URL). The backend
 recomputes it from the request's `Host` and compares it with the token's `nonce` claim:
 

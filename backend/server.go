@@ -297,8 +297,9 @@ func (s *Server) auth(next handler) http.HandlerFunc {
 
 // tokenBinding is the nonce an app asks Google to put into an ID token meant for
 // one backend: the unpadded base64url of SHA-256("sharepi-backend:" + host),
-// where host is the lower-cased host (with the port when it is not the default)
-// of the URL the app talks to, exactly as it arrives in the Host header.
+// where host is the lower-cased host of the URL the app talks to, as it arrives
+// in the Host header, with a default port (":443", ":80") left out: HTTP clients
+// differ in whether they send one, so neither side may depend on it.
 //
 // Every backend accepts tokens issued for the same OAuth client, so without this
 // a backend that is handed a member's token (every backend is, on each call)
@@ -306,7 +307,9 @@ func (s *Server) auth(next handler) http.HandlerFunc {
 // owner's own backend if the member is its administrator. A token whose nonce
 // names this backend's host is useless anywhere else.
 func tokenBinding(host string) string {
-	sum := sha256.Sum256([]byte("sharepi-backend:" + strings.ToLower(host)))
+	host = strings.ToLower(host)
+	host = strings.TrimSuffix(strings.TrimSuffix(host, ":443"), ":80")
+	sum := sha256.Sum256([]byte("sharepi-backend:" + host))
 	return b64.EncodeToString(sum[:])
 }
 
