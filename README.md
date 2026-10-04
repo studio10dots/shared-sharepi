@@ -34,4 +34,16 @@ Follow [docs/SETUP.md](docs/SETUP.md); the commands are kept only there.
 
 Source-available, not open source. You may read it and run the unmodified release in your own project. See [LICENSE](LICENSE).
 
+## 免責 / Disclaimer
+
+この資材は現状のまま提供されます。提供者は、これらの利用または利用できなかったことに関連して生じた、いかなるデータの損傷・消失・流出、
+およびこれに伴う逸失利益その他一切の損害について、法令が許す最大限の範囲で責任を負いません。
+保守・更新・公開の継続の義務もなく、いつでも変更・中止することがあります。
+ご自身の Google Cloud の費用、セキュリティ、データは、オーナーの責任です。詳細は [LICENSE](LICENSE) の第4条を参照してください。
+
+These materials are provided "as is". To the maximum extent permitted by law, the author is not liable for any damage to,
+or loss or disclosure of, data, or any resulting lost profits or other loss, arising from their use or inability to use them.
+There is no obligation to maintain, update or keep publishing them, and they may change or stop at any time.
+Costs, security and data of your own Google Cloud project are your responsibility. See section 4 of [LICENSE](LICENSE).
+
 © 2026 Kenji Koikeda (studio10dots)

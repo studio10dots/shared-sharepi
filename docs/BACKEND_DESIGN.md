@@ -432,10 +432,14 @@ because authentication is in the application: Cloud Run's invoker IAM check is d
 granting `allUsers`, which an organization's Domain Restricted Sharing policy would refuse), and an optional budget alert. Output: the service URL
 to type into the app.
 
-Terraform state should live in a small GCS bucket (Cloud Shell's home is not permanent).
-The container image is published by the project maintainer to a public registry; how Cloud Run
-pulls it (Artifact Registry remote repository, or `gcloud run deploy --source`) is an open
-implementation question (section 12).
+Terraform state lives in a small GCS bucket `<project_id>-tfstate` (Cloud Shell's home is not
+permanent). `terraform/backend/setup.sh` creates the bucket if needed, points Terraform at it
+and runs `terraform apply`; the owner's one command is the same for the first setup and for every
+update (each run starts from a fresh clone, which carries the newest `backend_image`).
+The container image is published by the project maintainer to GHCR (a public package, built by
+`release-backend.yml` on every merge that changes the backend). Cloud Run pulls it straight from
+GHCR: this was observed to work (section 12, item 5) but is not documented as supported by Google,
+so the first deploy in a new owner's project is the thing to watch.
 
 ## 12. Prototype verification
 
