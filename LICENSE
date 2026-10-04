@@ -1,0 +1,58 @@
+SharePi Backend Source-Available License
+
+Copyright (c) 2026 Kenji Koikeda (studio10dots). All rights reserved.
+
+This repository contains the server-side materials of SharePi: the backend
+service, its container build, and the Terraform configuration that sets it up.
+The source is published so that anyone who runs it with their own data can
+read exactly what it does. It is not open source. Only the rights listed in
+section 1 are granted; every other right is reserved.
+
+1. What you may do
+
+   a. Read, study and audit the source code and documentation.
+   b. Deploy the official, unmodified release (the container image published
+      by the copyright holder and the Terraform configuration in this
+      repository) to your own Google Cloud project, and operate it for your
+      own use and for the groups you invite to it.
+   c. Set the input variables and files that the Terraform configuration
+      exposes for that purpose (for example project_id, region,
+      admin_emails). Doing so is not a modification.
+
+2. What you may not do
+
+   a. Modify, translate, adapt or create derivative works of the source code,
+      the Terraform configuration or the container image.
+   b. Copy, redistribute, publish, sublicense, sell or lease any part of
+      them, except for the copies that your use under section 1 necessarily
+      makes (including the copies that GitHub's own terms allow other users to
+      make of a public repository).
+   c. Offer the software, or a service built on it, to third parties as a
+      hosted or managed product.
+   d. Remove or alter this notice or any copyright notice.
+
+3. Third-party components
+
+   The software uses third-party components (for example Go modules and
+   Terraform providers). They remain under their own licenses, which are not
+   changed by this one.
+
+4. No warranty
+
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+   COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+   WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+   IN CONNECTION WITH THE SOFTWARE OR ITS USE. You are responsible for the
+   costs of your own cloud project.
+
+5. Termination
+
+   Your rights under this license end automatically if you breach it.
+
+6. Changes of the copyright holder
+
+   The copyright holder may assign these rights, for example to a company
+   founded by them, without notice. This license then continues to apply to
+   the new holder's copyright in the same way.

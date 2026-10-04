@@ -1,0 +1,10 @@
+# Terraform state and working files may hold project details; never commit them.
+*.tfstate
+*.tfstate.*
+.terraform/
+terraform.tfvars
+crash.log
+
+# Local tooling
+.claude/
+.DS_Store
