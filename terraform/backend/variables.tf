@@ -17,7 +17,7 @@ variable "region" {
 }
 
 variable "backend_image" {
-  description = "Container image of the backend, published by the project maintainer (publisher.auto.tfvars)."
+  description = "Container image of the backend, published by the project maintainer (publisher.auto.tfvars), as ghcr.io/<publisher>/<name>:<version>. Cloud Run pulls it straight from GHCR (observed to work, docs/BACKEND_DESIGN.md section 12; not documented as supported by Google). Use a fixed version tag."
   type        = string
 
   validation {

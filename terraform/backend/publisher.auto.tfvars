@@ -3,5 +3,5 @@
 # region on the command line (docs/SETUP.md, SetupGuidePage) and edits nothing.
 # Both values are public: the image is pulled by Cloud Run, and the client ID
 # is the only audience the backend accepts ID tokens for.
-backend_image    = "REPLACE_WITH_PUBLISHED_IMAGE" # e.g. ghcr.io/<publisher>/chamagon-backend:1
+backend_image    = "ghcr.io/studio10dots/chamagon-backend:0.1.0" # a fixed version, raised by hand after each release
 google_client_id = "REPLACE_WITH_PUBLISHERS_WEB_CLIENT_ID.apps.googleusercontent.com"
