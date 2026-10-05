@@ -27,6 +27,21 @@ Follow [docs/SETUP.md](docs/SETUP.md); the commands are kept only there.
 `ghcr.io/studio10dots/chamagon-backend:<version>` として公開されます。リリースは `backend-vX.Y.Z` タグで行い、
 動作中のバックエンドは、このリポジトリの最新タグと自分のバージョンを比べて、更新があればオーナーに知らせます。
 
+### `chamagon` という名前について / About the name "chamagon"
+
+プロジェクトの初期の名前が `chamagon` で、いまの名前は SharePi です。次の 2 か所には、`chamagon` が、愛称として残っています。
+
+- コンテナイメージ (パッケージ) の名前: `chamagon-backend`、`chamagon-web`
+- 招待コードの先頭の文字列: `chamagon1.`
+
+どちらも、オーナーやメンバーの操作には、影響しません。名前を変えると、新しいパッケージを公開し直す手間と、
+アプリとバックエンドが両方の接頭辞を受け付ける移行期間が必要になるため、そのままにしています。
+
+The project was first called `chamagon`; it is SharePi now. The old name stays, as a nickname, in the container
+image (package) names (`chamagon-backend`, `chamagon-web`) and in the prefix of invitation strings (`chamagon1.`).
+Neither affects how owners or members use the app, and renaming them would need new packages and a period in which
+the app and the backend accept both prefixes, so they are left as they are.
+
 ## ライセンス / License
 
 ソースは閲覧と監査のために公開されていますが、オープンソースではありません。
