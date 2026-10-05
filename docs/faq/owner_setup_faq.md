@@ -169,8 +169,7 @@ Google ユーザー ID で決まるので、メールは本来、必要ありま
 ユーザー ID も読めないときは、「誰も管理者になれない」ことを知らせるエラーで止まります。そのときは、
 アプリでログインしているアカウントの Cloud Shell で、もう一度実行してください。
 
-**確認状況**: 確認済み(2026-10。Cloud Shell で再現)。修正後の動作は、テストと `terraform console` で確認済みですが、
-実際の Cloud Shell では、まだ試していません。
+**確認状況**: 確認済み(2026-10。Cloud Shell で再現し、修正後のコマンドで、最後まで実行できることも確認)。
 
 ## 12. 「Service Usage API has not been used in project ... before or it is disabled」(SERVICE_DISABLED)というエラーが出た
 
@@ -194,5 +193,5 @@ gcloud services enable serviceusage.googleapis.com cloudresourcemanager.googleap
   iamcredentials.googleapis.com --project=<プロジェクトID>
 ```
 
-**確認状況**: 確認済み(2026-10。Cloud Shell で再現)。修正後の動作は、再試行の仕組みをテスト用の偽の応答で確認済みですが、
-実際の Cloud Shell では、まだ試していません。
+**確認状況**: 確認済み(2026-10。Cloud Shell で再現し、修正後のコマンドで、最後まで実行できることも確認)。
+自動のやり直しが、実際に働いたかどうかは、確認していません(再試行の仕組みは、テスト用の偽の応答で確認済み)。
