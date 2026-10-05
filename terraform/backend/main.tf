@@ -7,7 +7,12 @@ data "google_project" "this" {
 locals {
   bucket_name = coalesce(var.bucket_name, "${var.project_id}-photos")
   # Whoever runs `terraform apply` holds the GCP contract, so they are the administrator.
-  admin_emails = length(var.admin_emails) > 0 ? var.admin_emails : [lower(data.google_client_openid_userinfo.me.email)]
+  # The email is only needed when no user id is pinned (admin_subs). Cloud Shell's
+  # credentials can carry no email at all (the lookup then answers null), and
+  # that must not stop a setup that has the user id: a missing email is checked
+  # below, on the service, only when nothing else names an administrator.
+  runner_email = try(lower(data.google_client_openid_userinfo.me.email), "")
+  admin_emails = length(var.admin_emails) > 0 ? var.admin_emails : (local.runner_email != "" ? [local.runner_email] : [])
 
   # Cloud Run v2's default URL is predictable (https://SERVICE-PROJECT_NUMBER.REGION.run.app),
   # which lets the web and backend services each tell the other its URL without a
@@ -153,6 +158,13 @@ resource "google_cloud_run_v2_service" "backend" {
         name  = "REQUIRE_TOKEN_BINDING"
         value = var.require_token_binding ? "true" : "false"
       }
+    }
+  }
+
+  lifecycle {
+    precondition {
+      condition     = length(var.admin_subs) > 0 || length(local.admin_emails) > 0
+      error_message = "Neither your Google user id nor your email could be read, so nobody would be the administrator. Run the setup command again from a Cloud Shell signed in with the account the app uses, or set admin_subs or admin_emails (terraform.tfvars.example)."
     }
   }
 

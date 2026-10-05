@@ -153,3 +153,21 @@ gcloud billing projects link <プロジェクトID> --billing-account=<ACCOUNT_I
 
 **確認状況**: 確認済み(2026-10。Cloud Shell で、表示のあとも処理が先へ進むことを確認)。取得する処理は、
 テストで確認済みですが、実際の Cloud Shell では、まだ試していません。
+
+## 11. 「data.google_client_openid_userinfo.me.email is null」というエラーが出た
+
+```
+Error: Invalid function argument
+  on main.tf line 10, in locals:
+  data.google_client_openid_userinfo.me.email is null
+```
+
+**原因**: Cloud Shell の認証情報に、メールアドレスが含まれていません。管理者は、実行したアカウントの
+Google ユーザー ID で決まるので、メールは本来、必要ありませんが、古い版は、メールを必ず読もうとして止まっていました。
+
+**対処**: 最新のコマンドを、もう一度実行します(メールが読めなくても、ユーザー ID が読めれば、そのまま進みます)。
+ユーザー ID も読めないときは、「誰も管理者になれない」ことを知らせるエラーで止まります。そのときは、
+アプリでログインしているアカウントの Cloud Shell で、もう一度実行してください。
+
+**確認状況**: 確認済み(2026-10。Cloud Shell で再現)。修正後の動作は、テストと `terraform console` で確認済みですが、
+実際の Cloud Shell では、まだ試していません。
