@@ -124,3 +124,32 @@ terraform destroy ...
 入れ替わるだけで、写真のデータには触れません。
 
 **確認状況**: **推測**(コードとテストから。実際の Cloud Shell と実機では、まだ再現していません)。
+
+## 9. 「The billing account for the owning project is disabled in state absent」というエラーが出た
+
+**原因**: このプロジェクトに、**課金アカウントが紐づいていません**(`absent` は、紐づけが無いという意味)。
+課金アカウントを作ったことと、それをプロジェクトに紐づけることは、別の操作です。
+
+**対処**: 紐づけてから、同じコマンドをもう一度実行します(最初のバケットの作成で止まるので、途中までの作成物はありません)。
+
+```bash
+gcloud billing projects describe <プロジェクトID>     # billingEnabled: false なら未紐づけ
+gcloud billing accounts list                          # ACCOUNT_ID と OPEN を確認
+gcloud billing projects link <プロジェクトID> --billing-account=<ACCOUNT_ID>
+```
+
+コマンドに入れたプロジェクト ID が、課金を設定したものと同じかも確認します(`gcloud projects list`)。
+
+**確認状況**: 確認済み(2026-10)。
+
+## 10. Terraform の「Follow the instructions at https://developer.hashicorp.com/terraform/install」という表示が出た
+
+**原因**: Cloud Shell に、Terraform が入っていません(インストール方法を表示するだけのものが置かれていて、
+表示したあと正常終了するため、気づかずに先へ進むことがあります)。
+
+**対処**: セットアップのコマンドは、Terraform が無ければ、公式の配布元から取得します(チェックサムを確かめます)。
+この表示が出る版は、古いものです。もう一度、最新のコマンドを実行してください。手で入れるなら、
+上記の URL の手順に従います。
+
+**確認状況**: 確認済み(2026-10。Cloud Shell で、表示のあとも処理が先へ進むことを確認)。取得する処理は、
+テストで確認済みですが、実際の Cloud Shell では、まだ試していません。

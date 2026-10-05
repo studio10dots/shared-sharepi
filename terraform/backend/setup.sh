@@ -44,7 +44,16 @@ cd "$(dirname "${BASH_SOURCE[0]}")"
 source ./region.sh
 # shellcheck source=google_user_id.sh
 source ./google_user_id.sh
+# shellcheck source=ensure_terraform.sh
+source ./ensure_terraform.sh
 region="$(region_for "$area")"
+
+# Before anything is created: Cloud Shell no longer has Terraform, and its
+# stand-in exits successfully, so a missing Terraform must be caught here.
+if ! ensure_terraform; then
+  echo "Terraform is needed; see https://developer.hashicorp.com/terraform/install" >&2
+  exit 1
+fi
 
 state_bucket="${project_id}-tfstate"
 
