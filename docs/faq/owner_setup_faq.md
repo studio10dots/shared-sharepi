@@ -171,3 +171,28 @@ Google ユーザー ID で決まるので、メールは本来、必要ありま
 
 **確認状況**: 確認済み(2026-10。Cloud Shell で再現)。修正後の動作は、テストと `terraform console` で確認済みですが、
 実際の Cloud Shell では、まだ試していません。
+
+## 12. 「Service Usage API has not been used in project ... before or it is disabled」(SERVICE_DISABLED)というエラーが出た
+
+```
+Error: Error when reading or editing Project Service : ... Error 403: Service Usage API has not been used in project ...
+Error: Error creating Bucket: ... Cloud Logging API has not been used in project ...
+```
+
+**原因**: 新しいプロジェクトでは、Terraform が使う API(Service Usage、Cloud Logging など)が、まだ有効になっていません。
+Terraform が API を有効にするには、その Service Usage API が、先に有効である必要があります。
+
+**対処**: 最新のコマンドは、Terraform を動かす前に、必要な API を `gcloud` で有効にします。有効にした直後は、
+数十秒〜数分のあいだ、このエラーが出ることがあるので、**最大 3 回、60 秒おきに自動でやり直します**。それでも
+出るときは、数分待って、同じコマンドをもう一度実行してください。
+
+手で有効にするなら、次のとおりです。
+
+```bash
+gcloud services enable serviceusage.googleapis.com cloudresourcemanager.googleapis.com \
+  storage.googleapis.com logging.googleapis.com run.googleapis.com iam.googleapis.com \
+  iamcredentials.googleapis.com --project=<プロジェクトID>
+```
+
+**確認状況**: 確認済み(2026-10。Cloud Shell で再現)。修正後の動作は、再試行の仕組みをテスト用の偽の応答で確認済みですが、
+実際の Cloud Shell では、まだ試していません。

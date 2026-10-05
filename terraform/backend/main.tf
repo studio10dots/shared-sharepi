@@ -23,12 +23,16 @@ locals {
   web_origin        = var.enable_web ? coalesce(var.web_origin_override, local.predicted_web_url) : ""
 }
 
+# setup.sh turns the same APIs on first (plus Service Usage and Cloud Resource
+# Manager, which Terraform itself needs before it can list or enable anything);
+# keep the two lists in step.
 resource "google_project_service" "required" {
   for_each = toset([
     "run.googleapis.com",
     "storage.googleapis.com",
     "iam.googleapis.com",
     "iamcredentials.googleapis.com",
+    "logging.googleapis.com",
   ])
 
   service            = each.value
@@ -244,4 +248,6 @@ resource "google_logging_project_bucket_config" "default" {
   location       = "global"
   bucket_id      = "_Default"
   retention_days = var.log_retention_days
+
+  depends_on = [google_project_service.required]
 }

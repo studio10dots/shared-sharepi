@@ -57,8 +57,20 @@ fi
 
 state_bucket="${project_id}-tfstate"
 
-# New projects normally have Cloud Storage on already; this makes sure.
-gcloud services enable storage.googleapis.com --project="$project_id"
+# The APIs the stack needs, turned on here and not only by Terraform: Terraform
+# itself needs the Service Usage API to list and enable services, and a new
+# project can have none of them on (one made through the API has no default
+# APIs at all). Keep this list in step with google_project_service.required in
+# main.tf, plus Service Usage and Cloud Resource Manager, which Terraform needs.
+gcloud services enable \
+  serviceusage.googleapis.com \
+  cloudresourcemanager.googleapis.com \
+  storage.googleapis.com \
+  logging.googleapis.com \
+  run.googleapis.com \
+  iam.googleapis.com \
+  iamcredentials.googleapis.com \
+  --project="$project_id"
 
 if ! gcloud storage buckets describe "gs://${state_bucket}" --project="$project_id" > /dev/null 2>&1; then
   gcloud storage buckets create "gs://${state_bucket}" \
@@ -91,7 +103,22 @@ else
 fi
 
 terraform init -input=false
-terraform apply -auto-approve \
+
+# An API enabled a moment ago can still answer "not used before or disabled" from
+# some parts of Google for a minute or two. That is the only failure worth
+# waiting out; any other error stops at once, and so does a third attempt.
+log="$(mktemp)"
+attempt=1
+until terraform apply -auto-approve \
   -var="project_id=${project_id}" \
   -var="region=${region}" \
-  ${admin_args[@]+"${admin_args[@]}"}
+  ${admin_args[@]+"${admin_args[@]}"} 2>&1 | tee "$log"; do
+  if [ "$attempt" -ge 3 ] || ! grep -q "SERVICE_DISABLED" "$log"; then
+    rm -f "$log"
+    exit 1
+  fi
+  echo "An API that was just enabled is not active everywhere yet. Trying again in 60 seconds (attempt $((attempt + 1)) of 3)..." >&2
+  sleep 60
+  attempt=$((attempt + 1))
+done
+rm -f "$log"
