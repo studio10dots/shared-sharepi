@@ -19,7 +19,7 @@ locals {
   # Terraform dependency cycle (each service's own real `.uri` attribute is only
   # known after the OTHER service already referenced it). web_origin_override
   # escapes this prediction if Google ever changes that format for your project.
-  predicted_web_url = "https://chamagon-web-${data.google_project.this.number}.${var.region}.run.app"
+  predicted_web_url = "https://sharepi-web-${data.google_project.this.number}.${var.region}.run.app"
   web_origin        = var.enable_web ? coalesce(var.web_origin_override, local.predicted_web_url) : ""
 }
 
@@ -76,7 +76,7 @@ resource "google_storage_bucket" "photos" {
 }
 
 resource "google_service_account" "backend" {
-  account_id   = "chamagon-backend"
+  account_id   = "sharepi-backend"
   display_name = "sharepi backend"
 
   depends_on = [google_project_service.required]
@@ -96,7 +96,7 @@ resource "google_service_account_iam_member" "backend_signs_as_self" {
 }
 
 resource "google_cloud_run_v2_service" "backend" {
-  name     = "chamagon-backend"
+  name     = "sharepi-backend"
   location = var.region
 
   # Callable from the internet: the backend authenticates every request itself
@@ -185,7 +185,7 @@ resource "google_cloud_run_v2_service" "backend" {
 # privilege) - it never touches the bucket or signs a URL itself.
 resource "google_service_account" "web" {
   count        = var.enable_web ? 1 : 0
-  account_id   = "chamagon-web"
+  account_id   = "sharepi-web"
   display_name = "sharepi web static host"
 
   depends_on = [google_project_service.required]
@@ -193,7 +193,7 @@ resource "google_service_account" "web" {
 
 resource "google_cloud_run_v2_service" "web" {
   count    = var.enable_web ? 1 : 0
-  name     = "chamagon-web"
+  name     = "sharepi-web"
   location = var.region
 
   # Callable from the internet: it serves no group's data, only the static
