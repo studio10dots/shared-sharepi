@@ -4,8 +4,7 @@
 # whether the apply or the HTTPS check succeeded. Meant to be run after a
 # change to main.tf/variables.tf, to catch a region that does not actually
 # support one of the resources this module creates (Cloud Run v2, Autoclass,
-# IAM Credentials signBlob) before an owner hits it in docs/SETUP.md or
-# SetupGuidePage.
+# IAM Credentials signBlob) before an owner hits it in docs/SETUP.md.
 #
 #   bash smoke_test_regions.sh <project_id> [backend_image]
 #

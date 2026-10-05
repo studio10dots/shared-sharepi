@@ -25,7 +25,8 @@ func (v googleVerifier) Verify(ctx context.Context, token string) (Identity, err
 	}
 	email, _ := p.Claims["email"].(string)
 	verified, _ := p.Claims["email_verified"].(bool)
-	return Identity{Sub: p.Subject, Email: email, EmailVerified: verified}, nil
+	nonce, _ := p.Claims["nonce"].(string)
+	return Identity{Sub: p.Subject, Email: email, EmailVerified: verified, Nonce: nonce}, nil
 }
 
 func main() {
@@ -44,13 +45,19 @@ func main() {
 		}
 	}
 	srv := NewServer(Config{
-		AdminEmails:   admins,
-		PublicURL:     strings.TrimRight(os.Getenv("PUBLIC_URL"), "/"),
-		DownloadTTL:   time.Hour,
-		UploadTTL:     15 * time.Minute,
-		MaxUploadSize: 5 << 30,
-		MaxEventItems: 9999,
-		RosterTTL:     5 * time.Second,
+		AdminEmails:      admins,
+		PublicURL:        strings.TrimRight(os.Getenv("PUBLIC_URL"), "/"),
+		DownloadTTL:      time.Hour,
+		UploadTTL:        15 * time.Minute,
+		MaxUploadSize:    5 << 30,
+		MaxThumbnailSize: 1 << 20,
+		MaxMediumSize:    16 << 20,
+		MaxImageSize:     256 << 20,
+		MaxEventItems:    9999,
+		RosterTTL:        5 * time.Second,
+		// Off until the app sends tokens bound to a backend (tokenBinding);
+		// Terraform's require_token_binding turns it on.
+		RequireTokenBinding: os.Getenv("REQUIRE_TOKEN_BINDING") == "true",
 		// Unset (the default) disables all browser access; Terraform sets it
 		// only when enable_web = true, to that Web service's own URL.
 		WebOrigin: strings.TrimRight(os.Getenv("WEB_ORIGIN"), "/"),

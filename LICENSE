@@ -41,11 +41,33 @@ section 1 are granted; every other right is reserved.
 
    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-   COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
-   WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
-   IN CONNECTION WITH THE SOFTWARE OR ITS USE. You are responsible for the
-   costs of your own cloud project.
+   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. TO THE MAXIMUM EXTENT
+   PERMITTED BY APPLICABLE LAW, IN NO EVENT SHALL THE COPYRIGHT HOLDER BE
+   LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, INCLUDING ANY DAMAGE TO,
+   OR LOSS OR DISCLOSURE OF, DATA, AND ANY RESULTING LOSS OF PROFITS OR
+   INDIRECT OR SPECIAL DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+   OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE, ITS USE
+   OR THE INABILITY TO USE IT. You are responsible for the costs, the
+   security and the data of your own cloud project and of the groups you run.
+
+   The copyright holder has no obligation to maintain, update or fix the
+   software, to answer questions, or to keep publishing it, and may change or
+   stop any of this at any time without notice.
+
+   Nothing in this section excludes or limits liability that cannot be
+   excluded or limited by law, such as liability for intentional misconduct or
+   gross negligence.
+
+   (日本語による要約。相違がある場合は英語版が優先します。)
+   本ソフトウェアは現状のまま提供され、いかなる保証もありません。法令が許す
+   最大限の範囲で、著作権者は、本ソフトウェアの利用または利用できなかった
+   ことに関連して生じた、いかなるデータの損傷・消失・流出、およびこれに伴う
+   逸失利益、間接的な損害、特別な損害その他一切の損害について責任を負いま
+   せん。ご自身の Google Cloud プロジェクトの費用、セキュリティ、データは、
+   利用者の責任です。著作権者は、保守、更新、修正、問い合わせへの対応、
+   公開の継続を行う義務を負わず、これらをいつでも通知なく変更・中止できます。
+   ただし、故意または重大な過失による責任など、法令により排除・制限できない
+   責任は、この条項によって排除・制限されません。
 
 5. Termination
 

@@ -13,9 +13,8 @@ var (
 
 // Version identifies one stored revision of an object. It is opaque and is
 // only ever compared for equality: GCS uses its generation number
-// (stringified), S3 uses its ETag. The zero value (empty string) is never a
-// real version — GCS generations are positive integers, S3 ETags are always
-// quoted hex — so it doubles as the "the object must not exist yet"
+// (stringified). The zero value (empty string) is never a real version — GCS
+// generations are positive integers — so it doubles as the "the object must not exist yet"
 // precondition sentinel (see Write).
 type Version string
 
@@ -38,7 +37,7 @@ type Listing struct {
 }
 
 // Store is the bucket, as the backend needs it. It is an interface so tests need
-// no cloud storage; the real implementations are gcs.go (GCP) and s3.go (AWS).
+// no cloud storage; the real implementation is gcs.go.
 type Store interface {
 	// Read returns the object and its version, or ErrNotFound.
 	Read(ctx context.Context, name string) ([]byte, Version, error)
@@ -48,9 +47,7 @@ type Store interface {
 	// returns ErrPrecondition.
 	Write(ctx context.Context, name string, data []byte, ifVersionMatch *Version) (Version, error)
 	// List lists one prefix level. withMetadata asks for ObjectInfo.Metadata to
-	// be populated too: GCS includes it in the listing call at no extra cost,
-	// but S3 does not return object metadata from ListObjectsV2, so the S3
-	// implementation pays one extra HeadObject per object when this is true.
+	// be populated too: GCS includes it in the listing call at no extra cost.
 	// Callers that only need names/prefixes pass false.
 	List(ctx context.Context, prefix, delimiter string, withMetadata bool) (Listing, error)
 	// Delete removes an object; a missing object is not an error. The bucket's

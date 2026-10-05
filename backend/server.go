@@ -31,6 +31,10 @@ type Identity struct {
 	RawSub        string
 	Email         string
 	EmailVerified bool
+	// Nonce is the token's nonce claim: what the app asked Google to put in it.
+	// An app that binds its tokens to one backend (see tokenBinding) puts a value
+	// there that only that backend accepts.
+	Nonce string
 }
 
 // Verifier checks a bearer ID token. It is an interface so tests need no Google.
@@ -40,9 +44,7 @@ type Verifier interface {
 
 // SignRequest describes one signed URL. ContentType, Metadata and MaxSize are
 // PUT-only: the signer turns them into whatever headers its cloud needs
-// (e.g. Content-Type, x-goog-meta-*/x-amz-meta-*, a size-range condition),
-// since the exact header names and what can be enforced this way differ
-// between clouds (see gcsSigner and s3Signer).
+// (e.g. Content-Type, x-goog-meta-*, a size-range condition); see gcsSigner.
 type SignRequest struct {
 	Object      string
 	Method      string // GET or PUT
@@ -59,20 +61,34 @@ type Signer interface {
 }
 
 type Config struct {
-	AdminEmails   map[string]bool
-	PublicURL     string // this backend's own URL; derived from the request when empty
-	DownloadTTL   time.Duration
-	UploadTTL     time.Duration
-	MaxUploadSize int64
+	AdminEmails map[string]bool
+	PublicURL   string // this backend's own URL; derived from the request when empty
+	DownloadTTL time.Duration
+	UploadTTL   time.Duration
+	// MaxUploadSize is the largest object any upload URL allows (a video's
+	// original may use all of it). The three below are tighter limits for what is
+	// not a video: a thumbnail is a few KB, a medium image a few MB, a photo
+	// original some tens of MB. Zero means no tighter limit than MaxUploadSize.
+	// They exist because a member holds a signed URL for each upload, and the
+	// owner pays for whatever is stored through it.
+	MaxUploadSize    int64
+	MaxThumbnailSize int64
+	MaxMediumSize    int64
+	MaxImageSize     int64
 
 	// WebOrigin is the one browser origin allowed to call this backend
-	// (its own Web build's Cloud Run URL, Agents.md section 15); empty
+	// (its own Web build's Cloud Run URL); empty
 	// disables all browser (CORS) access. See cors.go.
 	WebOrigin string
 
 	// MaxEventItems is the most photos and videos one event may hold.
 	MaxEventItems int
 	RosterTTL     time.Duration
+
+	// RequireTokenBinding refuses an ID token that carries no nonce for this
+	// backend. A token that carries a nonce for another backend is always refused,
+	// whatever this says: that is a token someone is replaying. See tokenBinding.
+	RequireTokenBinding bool
 }
 
 type Server struct {
@@ -120,8 +136,8 @@ type Roster struct {
 	Version     int    `json:"version"`
 	DisplayName string `json:"display_name"`
 	CreatedAt   string `json:"created_at"`
-	// Sharing is "suspended" while sharing is stopped because the administrator's
-	// plan lapsed (docs/BACKEND_DESIGN.md section 14); empty otherwise.
+	// Sharing is "suspended" while the administrator's app has stopped sharing in
+	// the group; empty otherwise.
 	Sharing string   `json:"sharing,omitempty"`
 	Members []Member `json:"members"`
 }
@@ -266,6 +282,10 @@ func (s *Server) auth(next handler) http.HandlerFunc {
 			writeErr(w, http.StatusUnauthorized, "invalid token")
 			return
 		}
+		if !s.tokenBoundHere(id, r) {
+			writeErr(w, http.StatusUnauthorized, "invalid token")
+			return
+		}
 		id.RawSub = id.Sub
 		if id.Sub, err = s.hashSub(r.Context(), id.RawSub); err != nil {
 			writeErr(w, http.StatusBadGateway, "storage error")
@@ -273,6 +293,34 @@ func (s *Server) auth(next handler) http.HandlerFunc {
 		}
 		next(w, r, id)
 	}
+}
+
+// tokenBinding is the nonce an app asks Google to put into an ID token meant for
+// one backend: the unpadded base64url of SHA-256("sharepi-backend:" + host),
+// where host is the lower-cased host of the URL the app talks to, as it arrives
+// in the Host header, with a default port (":443", ":80") left out: HTTP clients
+// differ in whether they send one, so neither side may depend on it.
+//
+// Every backend accepts tokens issued for the same OAuth client, so without this
+// a backend that is handed a member's token (every backend is, on each call)
+// could replay it against any other backend the member uses, and against the
+// owner's own backend if the member is its administrator. A token whose nonce
+// names this backend's host is useless anywhere else.
+func tokenBinding(host string) string {
+	host = strings.ToLower(host)
+	host = strings.TrimSuffix(strings.TrimSuffix(host, ":443"), ":80")
+	sum := sha256.Sum256([]byte("sharepi-backend:" + host))
+	return b64.EncodeToString(sum[:])
+}
+
+// tokenBoundHere reports whether the token may be used on this request's host.
+// A nonce that names another host is always refused; a token without one is
+// refused only when the owner required binding.
+func (s *Server) tokenBoundHere(id Identity, r *http.Request) bool {
+	if id.Nonce == "" {
+		return !s.cfg.RequireTokenBinding
+	}
+	return hmac.Equal([]byte(id.Nonce), []byte(tokenBinding(r.Host)))
 }
 
 func (s *Server) isAdmin(id Identity) bool { return s.cfg.AdminEmails[strings.ToLower(id.Email)] }
@@ -391,7 +439,7 @@ func (s *Server) dropCachedRoster(g string) {
 
 // updateRoster is the only place a roster is rewritten. It reads, applies fn and
 // writes with a generation precondition, retrying when another writer got there
-// first (Agents.md section 7).
+// first.
 func (s *Server) updateRoster(ctx context.Context, g string, fn func(*Roster) error) (Roster, error) {
 	defer s.dropCachedRoster(g)
 	for range 6 {

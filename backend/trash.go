@@ -31,7 +31,7 @@ type trashEvent struct {
 type trashObject struct {
 	Path string `json:"path"`
 	// Generation is the object's Store.Version, opaque to clients: a decimal
-	// generation number on GCS, an ETag on S3. It is a string because a GCS
+	// generation number on GCS. It is a string because a GCS
 	// generation is a 64-bit integer, not safe in every JSON client.
 	Generation string `json:"generation"`
 	DeletedAt  string `json:"deleted_at,omitempty"`

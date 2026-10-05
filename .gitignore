@@ -3,6 +3,8 @@
 *.tfstate.*
 .terraform/
 terraform.tfvars
+# Written by terraform/backend/setup.sh at run time (names the state bucket).
+terraform/backend/backend.tf
 crash.log
 
 # Local tooling

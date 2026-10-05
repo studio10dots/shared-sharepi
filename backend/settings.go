@@ -10,7 +10,7 @@ import (
 )
 
 // The owner's settings for this backend, kept as one small object in the
-// bucket (docs/BACKEND_DESIGN.md section 17). Today they are the limits on
+// bucket (docs/BACKEND_DESIGN.md, "Owner settings"). Today they are the limits on
 // videos: the app asks for them before it uploads a video and offers the
 // user a choice (or refuses) when the video is over them.
 const settingsObject = "_backend/settings.json"
@@ -24,8 +24,7 @@ const settingsTTL = 30 * time.Second
 //
 //   - MaxSeconds / MaxBytes: a longer or larger video is not uploaded. The
 //     backend enforces MaxBytes itself (it is part of the signed upload URL);
-//     it cannot see a video's length, so MaxSeconds is the app's check, like
-//     the plan limits (Agents.md section 20).
+//     it cannot see a video's length, so MaxSeconds is the app's check.
 //   - ConfirmSeconds / ConfirmBytes: over these the app asks the user whether
 //     to upload the video as it is or compressed.
 type VideoSettings struct {
@@ -108,7 +107,7 @@ func (s *Server) getSettings(w http.ResponseWriter, r *http.Request, id Identity
 
 // putSettings replaces the settings. Only the backend's administrators may. The
 // object is the single writer's (this endpoint's), written with a generation
-// precondition like every shared object (Agents.md section 7).
+// precondition like every shared object.
 func (s *Server) putSettings(w http.ResponseWriter, r *http.Request, id Identity) {
 	if !s.isAdmin(id) {
 		writeErr(w, http.StatusForbidden, "administrator only")
@@ -158,13 +157,33 @@ func isVideoExt(ext string) bool {
 	return strings.HasPrefix(contentTypeFor(ext), "video/")
 }
 
-// uploadLimit is the size limit signed into an original's upload URL: the
-// backend's own, or the owner's video limit when that is lower.
-func (s *Server) uploadLimit(ctx context.Context, ext string) (int64, error) {
-	limit := s.cfg.MaxUploadSize
-	if !isVideoExt(ext) {
-		return limit, nil
+// capped returns limit, lowered to the backend's overall upload size when that
+// is set and smaller. A zero limit means "no tighter than the overall one".
+func (s *Server) capped(limit int64) int64 {
+	all := s.cfg.MaxUploadSize
+	if limit <= 0 || (all > 0 && limit > all) {
+		return all
 	}
+	return limit
+}
+
+// derivativeLimit is the size limit signed into a thumbnail's or a medium
+// image's upload URL.
+func (s *Server) derivativeLimit(kind string) int64 {
+	if kind == "thumbnail" {
+		return s.capped(s.cfg.MaxThumbnailSize)
+	}
+	return s.capped(s.cfg.MaxMediumSize)
+}
+
+// uploadLimit is the size limit signed into an original's upload URL: for a
+// photo the backend's photo limit, for a video its overall limit or the owner's
+// video limit when that is lower.
+func (s *Server) uploadLimit(ctx context.Context, ext string) (int64, error) {
+	if !isVideoExt(ext) {
+		return s.capped(s.cfg.MaxImageSize), nil
+	}
+	limit := s.cfg.MaxUploadSize
 	st, err := s.loadSettings(ctx)
 	if err != nil {
 		return 0, err

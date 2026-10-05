@@ -1,7 +1,7 @@
 <#
 .SYNOPSIS
   Smoke-tests terraform/backend/ once per region (PowerShell version of
-  smoke_test_regions.sh; keep both in sync — Agents.md section 14).
+  smoke_test_regions.sh; keep both in sync).
 
 .DESCRIPTION
   For each region, in sequence: terraform apply, confirm the backend answers
@@ -9,7 +9,7 @@
   HTTPS check succeeded. Meant to be run after a change to main.tf/variables.tf,
   to catch a region that does not actually support one of the resources this
   module creates (Cloud Run v2, Autoclass, IAM Credentials signBlob) before an
-  owner hits it in docs/SETUP.md or SetupGuidePage.
+  owner hits it in docs/SETUP.md.
 
   -ProjectId is never your production project if you have one deployed there
   already: this creates and destroys a real bucket/service account/Cloud Run
@@ -74,7 +74,7 @@ $OutputEncoding = [System.Text.Encoding]::UTF8
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $env:TF_CLI_ARGS = "-no-color"
 
-# Mirrors region.sh's region_for(); keep both in sync (Agents.md section 14).
+# Mirrors region.sh's region_for(); keep both in sync.
 $RegionMap = [ordered]@{
     ea = "asia-northeast1"      # East Asia            - Tokyo
     ca = "asia-south1"          # Central / South Asia  - Mumbai

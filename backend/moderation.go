@@ -14,7 +14,7 @@ import (
 )
 
 // Moderation lives here because the publisher runs no server: reports go to the
-// backend's administrator, as objects under the group prefix (ADR-013).
+// backend's administrator, as objects under the group prefix.
 
 var (
 	reportReasons = map[string]bool{"inappropriate": true, "sexual": true, "minor": true, "harassment": true, "spam": true, "other": true}

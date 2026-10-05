@@ -17,7 +17,7 @@ variable "region" {
 }
 
 variable "backend_image" {
-  description = "Container image of the backend, published by the project maintainer (publisher.auto.tfvars)."
+  description = "Container image of the backend, published by the project maintainer (publisher.auto.tfvars), as ghcr.io/<publisher>/<name>:<version>. Cloud Run pulls it straight from GHCR (observed to work, docs/BACKEND_DESIGN.md section 12; not documented as supported by Google). Use a fixed version tag."
   type        = string
 
   validation {
@@ -60,6 +60,12 @@ variable "deletion_protection" {
   default     = true
 }
 
+variable "require_token_binding" {
+  description = "Refuse sign-in tokens that are not bound to this backend (docs/BACKEND_DESIGN.md, \"Token binding\"). A token bound to another backend is always refused; this also refuses one with no binding. Leave false until the app sends bound tokens."
+  type        = bool
+  default     = false
+}
+
 variable "soft_delete_retention_seconds" {
   description = "How long a deleted photo stays recoverable (default 30 days, GCS maximum 90)."
   type        = number
@@ -67,7 +73,7 @@ variable "soft_delete_retention_seconds" {
 }
 
 variable "enable_web" {
-  description = "Also host the Flutter Web build on Cloud Run (optional, off by default; Agents.md section 15)."
+  description = "Also host the Flutter Web build on Cloud Run (optional, off by default)."
   type        = bool
   default     = false
 }

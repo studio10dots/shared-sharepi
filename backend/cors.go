@@ -3,14 +3,13 @@ package main
 import "net/http"
 
 // corsAllowedMethods and corsAllowedHeaders cover every method and header this
-// API uses. Authorization carries the bearer ID token (Agents.md section 8),
-// so it must always be allowed through a preflight.
+// API uses. Authorization carries the bearer ID token, so it must always be allowed through a preflight.
 const (
 	corsAllowedMethods = "GET, POST, PUT, PATCH, DELETE, OPTIONS"
 	corsAllowedHeaders = "Authorization, Content-Type"
 )
 
-// withCORS enforces Agents.md section 15's "Web is single-backend only": a
+// withCORS keeps a Web build tied to the one backend it was deployed for: a
 // browser may call this backend only from its own Web build's origin
 // (Config.WebOrigin, set by Terraform's enable_web to that Cloud Run
 // service's own URL - empty when Web hosting is not enabled for this
@@ -18,8 +17,8 @@ const (
 // the browser blocks the response (a "simple" request) or never sends the
 // real request past a failed preflight (anything carrying Authorization,
 // which is every authenticated call here) - this is enforced here, not only
-// by hiding the option in the app (Agents.md section 15's Web build has no UI
-// to add another backend).
+// by hiding the option in the app (the Web build has no UI to add another
+// backend).
 //
 // A non-browser caller (the mobile app, server-to-server, pentest tooling)
 // sends no Origin header and is completely unaffected: CORS is a browser-only

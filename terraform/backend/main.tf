@@ -47,7 +47,7 @@ resource "google_storage_bucket" "photos" {
     retention_duration_seconds = var.soft_delete_retention_seconds
   }
 
-  # Share-link manifests (Agents.md section 3, "{group_id}/shares/{share_id}.share.json")
+  # Share-link manifests ("{group_id}/shares/{share_id}.share.json")
   # are access grants that already expire in minutes via their own signed URL;
   # this just clears the small objects themselves out of the bucket afterwards.
   # matchesSuffix, not matchesPrefix: group_id varies per group, so there is no
@@ -143,6 +143,10 @@ resource "google_cloud_run_v2_service" "backend" {
         name  = "WEB_ORIGIN"
         value = local.web_origin
       }
+      env {
+        name  = "REQUIRE_TOKEN_BINDING"
+        value = var.require_token_binding ? "true" : "false"
+      }
     }
   }
 
@@ -152,11 +156,11 @@ resource "google_cloud_run_v2_service" "backend" {
   ]
 }
 
-# Optional: hosts the Flutter Web build (Agents.md section 15). Off by
+# Optional: hosts the Flutter Web build. Off by
 # default; the owner turns it on with enable_web = true. This container only
 # serves static files, so it gets its own service account with no roles at
 # all rather than the project's default Compute service account (least
-# privilege, section 13) - it never touches the bucket or signs a URL itself.
+# privilege) - it never touches the bucket or signs a URL itself.
 resource "google_service_account" "web" {
   count        = var.enable_web ? 1 : 0
   account_id   = "chamagon-web"
@@ -198,7 +202,7 @@ resource "google_cloud_run_v2_service" "web" {
 
       # config.json (served by nginx via envsubst, docker/web.Dockerfile) tells
       # the Flutter Web build which single backend it belongs to, so it never
-      # needs a manual "enter backend URL" entry (Agents.md section 15: the
+      # needs a manual "enter backend URL" entry (the
       # Web build is locked to the one backend it was deployed for).
       env {
         name  = "BACKEND_URL"
