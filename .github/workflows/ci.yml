@@ -50,6 +50,8 @@ jobs:
         working-directory: terraform/backend
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - run: bash -n setup.sh ensure_terraform.sh google_user_id.sh region.sh
+      - run: bash -n setup.sh setup_ui.sh ensure_terraform.sh google_user_id.sh region.sh
       - run: bash ensure_terraform_test.sh
       - run: bash google_user_id_test.sh
+      # setup.sh end to end, against stand-ins for gcloud and terraform.
+      - run: bash setup_test.sh
