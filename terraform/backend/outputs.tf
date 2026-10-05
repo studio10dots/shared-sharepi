@@ -5,8 +5,13 @@ output "backend_url" {
 }
 
 output "administrator" {
-  description = "Google accounts that can create groups and invite people."
+  description = "Google accounts that can create groups and invite people (only used when administrator_check is \"email\")."
   value       = local.admin_emails
+}
+
+output "administrator_check" {
+  description = "How the backend recognises an administrator: \"user id\" (admin_subs) or \"email\" (admin_emails)."
+  value       = length(var.admin_subs) > 0 ? "user id" : "email"
 }
 
 output "bucket_name" {

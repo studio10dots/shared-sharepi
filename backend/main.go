@@ -38,14 +38,9 @@ func main() {
 	}
 	b := gc.Bucket(bucket)
 
-	admins := map[string]bool{}
-	for _, e := range strings.Split(os.Getenv("ADMIN_EMAILS"), ",") {
-		if e = strings.ToLower(strings.TrimSpace(e)); e != "" {
-			admins[e] = true
-		}
-	}
-	srv := NewServer(Config{
-		AdminEmails:      admins,
+	cfg := Config{
+		AdminSubs:        parseList(os.Getenv("ADMIN_SUBS"), false),
+		AdminEmails:      parseList(os.Getenv("ADMIN_EMAILS"), true),
 		PublicURL:        strings.TrimRight(os.Getenv("PUBLIC_URL"), "/"),
 		DownloadTTL:      time.Hour,
 		UploadTTL:        15 * time.Minute,
@@ -61,7 +56,9 @@ func main() {
 		// Unset (the default) disables all browser access; Terraform sets it
 		// only when enable_web = true, to that Web service's own URL.
 		WebOrigin: strings.TrimRight(os.Getenv("WEB_ORIGIN"), "/"),
-	}, googleVerifier{audience: mustEnv("GOOGLE_CLIENT_ID")}, gcsStore{b}, gcsSigner{b: b, accessID: mustEnv("SIGNER_SERVICE_ACCOUNT")})
+	}
+	log.Print(adminModeLog(cfg))
+	srv := NewServer(cfg, googleVerifier{audience: mustEnv("GOOGLE_CLIENT_ID")}, gcsStore{b}, gcsSigner{b: b, accessID: mustEnv("SIGNER_SERVICE_ACCOUNT")})
 	srv.checkForUpdateAsync(http.DefaultClient)
 
 	port := os.Getenv("PORT")

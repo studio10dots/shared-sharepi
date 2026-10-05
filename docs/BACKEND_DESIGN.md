@@ -63,10 +63,14 @@ owns at most one.
 Being authenticated grants nothing. Authorization is the group roster (section 5), plus the
 administrator check for owner-only operations:
 
-- **Administrator** = the token's verified email is in `ADMIN_EMAILS` (environment variable).
-  Terraform fills it with the email of the account that runs `terraform apply`
-  (`google_client_openid_userinfo`), overridable by a variable. This is the person who holds the
-  GCP contract.
+- **Administrator** = the token's `sub` (Google's own user id, unhashed) is in `ADMIN_SUBS`
+  (environment variable). `setup.sh` fills it with the id of the account that runs it, which is the
+  person who holds the GCP contract. When `ADMIN_SUBS` is not empty it alone decides and
+  `ADMIN_EMAILS` is ignored, because an email can change hands and a `sub` cannot. When it is empty
+  the token's verified email in `ADMIN_EMAILS` decides (Terraform fills it with the email of the
+  account running `terraform apply`). The two are never combined, so adding ids can only narrow who is
+  an administrator. `ADMIN_SUBS` holds the raw id, not the keyed hash that rosters keep: it is the
+  owner's own setting, compared with the id in the verified token for the length of the request.
 - **Member of group G** = an `active` entry with the caller's `sub` in `G/members.json`.
 
 A non-member asking about a group gets `404`, the same as for a group that does not exist.
@@ -385,7 +389,7 @@ Cloud Run scales to zero and stops an idle instance after about 15 minutes. The 
 - Lives in `backend/`. Depends on the Google Cloud Storage, IAM Credentials and ID-token
   verification libraries; each dependency is justified in its own commit.
 - Stateless. No database; the only state is objects in the bucket.
-- Config by environment variables: `BUCKET`, `GOOGLE_CLIENT_ID`, `ADMIN_EMAILS`,
+- Config by environment variables: `BUCKET`, `GOOGLE_CLIENT_ID`, `ADMIN_SUBS`, `ADMIN_EMAILS`,
   `SIGNER_SERVICE_ACCOUNT`.
 
 ## 11. Terraform (owner runs it in Cloud Shell)

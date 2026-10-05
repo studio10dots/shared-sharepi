@@ -24,8 +24,8 @@ import (
 // backend uses and stores: a keyed hash of Google's user id (see hashSub), so a
 // leaked roster does not name anyone. RawSub is Google's own id, held only for
 // the length of the request (to recognise rosters written before hashing) and
-// never stored or logged. Email is used to recognise administrators and is
-// never stored.
+// never stored or logged. Email is used to recognise administrators when no
+// ADMIN_SUBS is configured, and is never stored.
 type Identity struct {
 	Sub           string
 	RawSub        string
@@ -61,6 +61,11 @@ type Signer interface {
 }
 
 type Config struct {
+	// AdminSubs are the Google user ids (the token's `sub`, unhashed) of the
+	// administrators. When it is not empty it alone decides who is one and
+	// AdminEmails is ignored: an email can change hands, a sub never does.
+	AdminSubs map[string]bool
+	// AdminEmails decides when AdminSubs is empty (the older setting).
 	AdminEmails map[string]bool
 	PublicURL   string // this backend's own URL; derived from the request when empty
 	DownloadTTL time.Duration
@@ -323,7 +328,45 @@ func (s *Server) tokenBoundHere(id Identity, r *http.Request) bool {
 	return hmac.Equal([]byte(id.Nonce), []byte(tokenBinding(r.Host)))
 }
 
-func (s *Server) isAdmin(id Identity) bool { return s.cfg.AdminEmails[strings.ToLower(id.Email)] }
+// isAdmin reports whether the caller is one of the backend's administrators.
+// With ADMIN_SUBS set it compares Google's own user id, which is never reused
+// or reassigned; without it, it falls back to the (verified) email, which can
+// change hands (a company or school address, a recreated account). It is
+// deliberately all-or-nothing: once ADMIN_SUBS exists, a matching email grants
+// nothing, so adding the ids can only narrow who is an administrator.
+func (s *Server) isAdmin(id Identity) bool {
+	if len(s.cfg.AdminSubs) > 0 {
+		return id.RawSub != "" && s.cfg.AdminSubs[id.RawSub]
+	}
+	return s.cfg.AdminEmails[strings.ToLower(id.Email)]
+}
+
+// parseList splits a comma-separated environment value into a set, trimming
+// blanks and dropping empty entries. lower folds case (emails are not
+// case-sensitive; a sub is a number and is left as it is).
+func parseList(csv string, lower bool) map[string]bool {
+	out := map[string]bool{}
+	for _, e := range strings.Split(csv, ",") {
+		e = strings.TrimSpace(e)
+		if lower {
+			e = strings.ToLower(e)
+		}
+		if e != "" {
+			out[e] = true
+		}
+	}
+	return out
+}
+
+// adminModeLog says, without naming anyone, which setting decides who an
+// administrator is — the thing an owner needs to see in the logs when "I am
+// not shown as administrator".
+func adminModeLog(c Config) string {
+	if len(c.AdminSubs) > 0 {
+		return fmt.Sprintf("administrators: %d by Google user id (ADMIN_SUBS); ADMIN_EMAILS is ignored", len(c.AdminSubs))
+	}
+	return fmt.Sprintf("administrators: %d by email (ADMIN_EMAILS); set ADMIN_SUBS to pin them to Google user ids", len(c.AdminEmails))
+}
 
 // member answers 404 for strangers, exactly as for a group that does not exist.
 func (s *Server) member(next memberHandler) handler {

@@ -11,7 +11,11 @@
 #      same command again finds the state and changes only what needs changing
 #      (no "already exists" errors, nothing to import).
 #   2. Points Terraform at it (backend.tf, written here and never committed).
-#   3. Runs `terraform apply`. It prints backend_url at the end.
+#   3. Finds the Google user id of the account running this script and passes it
+#      as admin_subs, so the backend recognises its administrator by that id
+#      (which never changes hands) rather than by email. If the id cannot be
+#      read it says so and the backend falls back to the email.
+#   4. Runs `terraform apply`. It prints backend_url at the end.
 #
 # The command is the same for the first setup and for every update: each run
 # starts from a fresh clone of the repository, so it brings the newest
@@ -38,6 +42,8 @@ fi
 cd "$(dirname "${BASH_SOURCE[0]}")"
 # shellcheck source=region.sh
 source ./region.sh
+# shellcheck source=google_user_id.sh
+source ./google_user_id.sh
 region="$(region_for "$area")"
 
 state_bucket="${project_id}-tfstate"
@@ -64,7 +70,19 @@ terraform {
 }
 EOF
 
+# The administrator is whoever runs this: they hold the GCP contract. Pin that
+# to their Google user id; without it the backend uses their email instead.
+admin_sub="$(google_user_id || true)"
+admin_args=()
+if [ -n "$admin_sub" ]; then
+  admin_args=(-var="admin_subs=[\"${admin_sub}\"]")
+else
+  echo "Note: could not read your Google user id, so the administrator is recognised by email only." >&2
+  echo "      Run this command again later, or set admin_subs (see terraform.tfvars.example)." >&2
+fi
+
 terraform init -input=false
 terraform apply -auto-approve \
   -var="project_id=${project_id}" \
-  -var="region=${region}"
+  -var="region=${region}" \
+  ${admin_args[@]+"${admin_args[@]}"}
