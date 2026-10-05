@@ -135,6 +135,12 @@ resource "google_cloud_run_v2_service" "backend" {
         name  = "ADMIN_EMAILS"
         value = join(",", local.admin_emails)
       }
+      # When not empty, these Google user ids alone decide who is an
+      # administrator and ADMIN_EMAILS is ignored (backend/server.go isAdmin).
+      env {
+        name  = "ADMIN_SUBS"
+        value = join(",", var.admin_subs)
+      }
       env {
         name  = "SIGNER_SERVICE_ACCOUNT"
         value = google_service_account.backend.email

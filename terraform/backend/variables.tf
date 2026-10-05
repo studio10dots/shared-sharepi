@@ -43,9 +43,26 @@ variable "bucket_name" {
 }
 
 variable "admin_emails" {
-  description = "Google accounts that may create groups and invite people. Defaults to the account running Terraform."
+  description = "Google accounts that may create groups and invite people. Defaults to the account running Terraform. Ignored by the backend when admin_subs is set."
   type        = list(string)
   default     = []
+}
+
+variable "admin_subs" {
+  description = <<-EOT
+    Google user ids (the `sub` of the account's ID token, e.g. "110571000531995686849")
+    of the administrators. When set, the backend decides who is an administrator by
+    these ids alone and ignores admin_emails: an email address can change hands,
+    a user id never does. setup.sh fills in the id of the account running it.
+    Empty (the default) keeps the email check.
+  EOT
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition     = alltrue([for s in var.admin_subs : can(regex("^[0-9]{10,30}$", s))])
+    error_message = "admin_subs must be Google user ids: 10-30 digits each (not email addresses)."
+  }
 }
 
 variable "max_instances" {

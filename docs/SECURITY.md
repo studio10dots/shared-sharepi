@@ -56,8 +56,12 @@ It is enforced by the backend, never only in the Flutter UI:
 
 ## Administrator
 
-The administrator is the owner: the email(s) in the backend's `ADMIN_EMAILS`, which Terraform sets to
-the account that ran it. Administrators create groups, issue invitations and remove members.
+The administrator is the owner, recognised by Google user id: the id(s) in the backend's `ADMIN_SUBS`,
+which `setup.sh` sets to the account that ran it. An email address can change hands (a company or
+school address, a recreated account); a user id never does, so once `ADMIN_SUBS` is set a matching
+email grants nothing. Without `ADMIN_SUBS` (an older deployment, or an id that could not be read) the
+backend uses the verified email in `ADMIN_EMAILS`. The backend logs which one is in force, never a
+name. Administrators create groups, issue invitations and remove members.
 
 The mobile app never receives project-owner/editor credentials, and there is no service-account key
 file: the backend signs URLs through `signBlob` as its own service account.
