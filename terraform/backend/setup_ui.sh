@@ -18,16 +18,96 @@ SP_N=0
 SP_STEP_OFFSET=0
 SP_KNOWN=1
 
-ui_banner() {
-  cat << 'BANNER'
-
+# The banner's art, one array entry per line.
+SP_ART=()
+while IFS= read -r _sp_line; do SP_ART+=("$_sp_line"); done << 'BANNER'
    _____ __                    ____  _
   / ___// /_  ____ _________  / __ \(_)
   \__ \/ __ \/ __ `/ ___/ _ \/ /_/ / /
  ___/ / / / / /_/ / /  /  __/ ____/ /
 /____/_/ /_/\__,_/_/   \___/_/   /_/
-
 BANNER
+unset _sp_line
+
+# truecolor, 256 or none: what the terminal can show. Colour is off when the
+# output is not a terminal (a pipe, a file) or NO_COLOR is set. SP_COLOR forces a
+# mode (the tests do).
+ui_color_mode() {
+  if [ -n "${SP_COLOR:-}" ]; then
+    echo "$SP_COLOR"
+  elif [ ! -t 1 ] || [ -n "${NO_COLOR:-}" ] || [ "${TERM:-dumb}" = "dumb" ]; then
+    echo none
+  elif [ -n "${CLOUD_SHELL:-}" ] || [ "${COLORTERM:-}" = "truecolor" ] || [ "${COLORTERM:-}" = "24bit" ]; then
+    echo truecolor
+  else
+    echo 256
+  fi
+}
+
+# A point on the landing page's blue -> indigo -> violet gradient, t in 0..100:
+# sets SP_R, SP_G, SP_B (truecolor) and SP_P (the nearest 256-colour code).
+ui_gradient() {
+  local t="$1"
+  local -a a b
+  if [ "$t" -le 50 ]; then
+    a=(59 130 246) b=(99 102 241) t=$((t * 2)) # #3b82f6 -> #6366f1
+  else
+    a=(99 102 241) b=(167 139 250) t=$(((t - 50) * 2)) # #6366f1 -> #a78bfa
+  fi
+  SP_R=$(((a[0] * (100 - t) + b[0] * t) / 100))
+  SP_G=$(((a[1] * (100 - t) + b[1] * t) / 100))
+  SP_B=$(((a[2] * (100 - t) + b[2] * t) / 100))
+  local -a palette=(33 33 69 63 99 105 141 141)
+  SP_P="${palette[$(($1 * 8 / 101))]}"
+}
+
+# One frame of the banner. The colour of each letter depends on where it is and on
+# $1, the phase, so successive frames make the gradient slide along the letters.
+ui_banner_frame() {
+  local phase="${1:-0}" mode r c ch line out="" pos
+  mode="$(ui_color_mode)"
+  for r in "${!SP_ART[@]}"; do
+    line="${SP_ART[$r]}"
+    if [ "$mode" = none ]; then
+      out+="$line"$'\n'
+      continue
+    fi
+    for ((c = 0; c < ${#line}; c++)); do
+      ch="${line:c:1}"
+      if [ "$ch" = " " ]; then
+        out+=" "
+        continue
+      fi
+      pos=$(((c * 100 / 40 + r * 6 + phase * 8) % 200))
+      [ "$pos" -gt 100 ] && pos=$((200 - pos))
+      ui_gradient "$pos"
+      if [ "$mode" = truecolor ]; then
+        out+=$'\033[38;2;'"${SP_R};${SP_G};${SP_B}m${ch}"
+      else
+        out+=$'\033[38;5;'"${SP_P}m${ch}"
+      fi
+    done
+    out+=$'\033[0m\n'
+  done
+  printf '%s' "$out"
+}
+
+# The banner. On a terminal the colours slide along the letters for about a
+# second and a half, redrawn in place; anywhere else it is printed once, plain.
+ui_banner() {
+  echo
+  if [ "$(ui_color_mode)" != none ] && [ -t 1 ]; then
+    local lines=${#SP_ART[@]} f
+    ui_banner_frame 0
+    for ((f = 1; f <= 24; f++)); do
+      sleep 0.06
+      printf '\033[%dA' "$lines"
+      ui_banner_frame "$f"
+    done
+  else
+    ui_banner_frame 0
+  fi
+  echo
 }
 
 # The banner, and the log file the rest of the output goes to.
@@ -59,15 +139,21 @@ ui_done() { echo "ok${1:+ ($1)}"; }
 # this shell, so a PATH change they make stays.
 ui_run() { "$@" >> "$SP_LOG" 2>&1; }
 
-# The same, for a long command: a dot on the screen every few seconds, so it is
-# clear that it is working.
+# The same, for a long command: a spinning bar (| / - \) in place, so it is clear
+# that it is working. Without a terminal there is nothing to spin, and nothing is
+# printed while it waits.
 ui_run_progress() {
   "$@" >> "$SP_LOG" 2>&1 &
-  local pid=$!
+  local pid=$! i=0 frames='|/-\' tty=0
+  if [ -t 1 ]; then tty=1; fi
   while kill -0 "$pid" 2> /dev/null; do
-    printf '.'
-    sleep "${SP_PROGRESS_INTERVAL:-5}"
+    if [ "$tty" -eq 1 ]; then
+      printf '%s\b' "${frames:i%4:1}"
+      i=$((i + 1))
+    fi
+    sleep "${SP_PROGRESS_INTERVAL:-0.1}"
   done
+  if [ "$tty" -eq 1 ]; then printf ' \b'; fi
   wait "$pid"
 }
 

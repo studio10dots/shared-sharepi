@@ -85,7 +85,15 @@ contains "success: the banner is shown" "$out" '/ ___// /_  ____ _________  / __
 contains "success: steps are numbered" "$out" '[1/8] Checking your project ... ok'
 contains "success: the last step" "$out" '[8/8] Reading the result ... ok'
 contains "success: the URL is shown" "$out" 'https://sharepi-backend-123.asia-northeast1.run.app'
-contains "success: says what to do next" "$out" 'register the URL above'
+contains "success: says what to do next" "$out" 'register the URL below'
+# On a line of its own, nothing else on it: that is what makes it copyable.
+if grep -qxF 'https://sharepi-backend-123.asia-northeast1.run.app' <<< "$out"; then
+  ok "success: the URL is on a line of its own"
+else
+  bad "success: the URL is not alone on its line"
+fi
+contains "success: the step line has no stray characters" "$out" '[7/8] Creating your backend (this takes a few minutes) ... ok'
+lacks "success: no escape codes without a terminal" "$out" $'\033'
 contains "success: names the log" "$out" "$log"
 lacks "success: no command output on the screen" "$out" 'Terraform has been successfully initialized'
 lacks "success: no resource lines on the screen" "$out" 'Creating...'
@@ -144,6 +152,35 @@ contains "state bucket: says so" "$out" 'ok (created)'
 run_setup bucket_old FAKE_BUCKET_DESCRIBE_EXIT=0
 lacks "state bucket: not created again" "$calls" 'buckets create'
 contains "state bucket: says so" "$out" 'ok (already there)'
+
+# ---------------------------------------------------------------- the banner's colours
+# shellcheck source=setup_ui.sh
+source "$here/setup_ui.sh"
+plain_art="$(printf '%s\n' "${SP_ART[@]}")"
+strip_escapes() { sed $'s/\033\\[[0-9;]*m//g'; }
+
+SP_COLOR=none
+none_frame="$(ui_banner_frame 0)"
+[ "$none_frame" = "$plain_art" ] && ok "banner: plain when colour is off" || bad "banner: plain output differs from the art"
+lacks "banner: no escape codes when colour is off" "$none_frame" $'\033'
+
+SP_COLOR=truecolor
+tc0="$(ui_banner_frame 0)"
+tc1="$(ui_banner_frame 3)"
+contains "banner: truecolor uses 24-bit codes" "$tc0" $'\033[38;2;'
+[ "$(strip_escapes <<< "$tc0")" = "$plain_art" ] && ok "banner: the letters are unchanged under the colours" || bad "banner: colouring altered the art"
+[ "$tc0" != "$tc1" ] && ok "banner: the colours move from frame to frame" || bad "banner: two phases look the same"
+
+SP_COLOR=256
+c256="$(ui_banner_frame 0)"
+contains "banner: 256-colour mode uses 256 codes" "$c256" $'\033[38;5;'
+[ "$(strip_escapes <<< "$c256")" = "$plain_art" ] && ok "banner: 256-colour mode keeps the art" || bad "banner: 256-colour mode altered the art"
+
+# The gradient runs from the landing page's blue (#3b82f6) to its violet (#a78bfa).
+ui_gradient 0;   [ "$SP_R,$SP_G,$SP_B" = "59,130,246" ] && ok "gradient: starts at blue" || bad "gradient start: $SP_R,$SP_G,$SP_B"
+ui_gradient 50;  [ "$SP_R,$SP_G,$SP_B" = "99,102,241" ] && ok "gradient: passes indigo" || bad "gradient middle: $SP_R,$SP_G,$SP_B"
+ui_gradient 100; [ "$SP_R,$SP_G,$SP_B" = "167,139,250" ] && ok "gradient: ends at violet" || bad "gradient end: $SP_R,$SP_G,$SP_B"
+unset SP_COLOR
 
 # SETUP_TEST_SHOW=1 bash setup_test.sh shows what the owner sees in two cases.
 if [ -n "${SETUP_TEST_SHOW:-}" ]; then

@@ -183,17 +183,20 @@ backend_url="$(terraform output -raw backend_url 2>> "$SP_LOG")" || ui_fail
 admin_check="$(terraform output -raw administrator_check 2>> "$SP_LOG" || echo "unknown")"
 ui_done
 
+# The URL is on a line of its own, flush left, so that selecting that one line
+# copies exactly the URL and nothing else.
 cat << EOF
 
 All done. Your SharePi backend is ready.
 
-  Backend URL : ${backend_url}
-  Administrator is recognised by : ${admin_check}
-
 What to do next
-  1. Open the SharePi app, go to Profile, and register the URL above.
-  2. Sign in to the app with the same Google account you used in this Cloud Shell.
-     That account is the administrator and can create groups and invite people.
+  Open the SharePi app, go to Profile, and register the URL below.
+
+${backend_url}
+
+  Then sign in to the app with the same Google account you used in this Cloud
+  Shell. That account is the administrator (recognised by: ${admin_check}) and can
+  create groups and invite people.
 
 The log of this run: ${SP_LOG}
 EOF
