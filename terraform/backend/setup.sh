@@ -2,7 +2,10 @@
 # Sets up, or updates, an owner's backend in one go. docs/SETUP.md and the app's
 # setup guide give the one command that runs it from a fresh clone:
 #
-#   bash setup.sh <project_id> <area code>
+#   bash setup.sh <project_id> <area code> [language]
+#
+# The language is optional: "ja" for Japanese, anything else (or nothing) for the
+# language the shell is set to, else English.
 #
 # What it does, in order (each is one line on the screen; everything the commands
 # print goes to a log file, and a failure says what to do next: setup_ui.sh):
@@ -20,7 +23,7 @@
 #      (which never changes hands) rather than by email. If the id cannot be
 #      read it says so and the backend falls back to the email.
 #   6-7. terraform init, then terraform apply.
-#   8. Reads the backend's URL and shows what to do with it.
+#   8. Reads the backend's URL and prints it as the very last line.
 #
 # The command is the same for the first setup and for every update: each run
 # starts from a fresh clone of the repository, so it brings the newest
@@ -29,13 +32,16 @@
 
 set -euo pipefail
 
-if [ "$#" -ne 2 ]; then
-  echo "usage: bash setup.sh <project_id> <area code>" >&2
+if [ "$#" -lt 2 ] || [ "$#" -gt 3 ]; then
+  echo "usage: bash setup.sh <project_id> <area code> [language]" >&2
   exit 2
 fi
 
 project_id="$1"
 area="$2"
+if [ "$#" -eq 3 ]; then
+  export SHAREPI_LANG="$3"
+fi
 
 # Same rule as variables.tf, checked here first because a bucket is created
 # from the ID before Terraform ever runs.
@@ -65,11 +71,12 @@ export TF_CLI_ARGS="-no-color"
 
 SP_PROJECT="$project_id"
 SP_REGION="$region"
+ui_lang
 ui_init
 ui_total 8
 
 # ---- 1. the project
-ui_step "Checking your project"
+ui_step "$(ui_t step_project)"
 ui_run gcloud projects describe "$project_id" --format='value(projectId)' || ui_fail
 # A project with no billing account is the most common first failure, and it is
 # cheaper to say so here than to let the first API call fail. If the answer
@@ -87,7 +94,7 @@ ui_done
 # ---- 2. Terraform
 # Cloud Shell's stand-in for Terraform exits successfully, so a missing one has
 # to be caught here, before anything is created.
-ui_step "Getting Terraform ready"
+ui_step "$(ui_t step_terraform)"
 ui_run ensure_terraform || ui_fail
 ui_done
 
@@ -97,7 +104,7 @@ ui_done
 # project can have none of them on (one made through the API has no default
 # APIs at all). Keep this list in step with google_project_service.required in
 # main.tf, plus Service Usage and Cloud Resource Manager, which Terraform needs.
-ui_step "Turning on the Google Cloud services it uses"
+ui_step "$(ui_t step_apis)"
 ui_run gcloud services enable \
   serviceusage.googleapis.com \
   cloudresourcemanager.googleapis.com \
@@ -110,7 +117,7 @@ ui_run gcloud services enable \
 ui_done
 
 # ---- 4. where Terraform keeps its state
-ui_step "Preparing the place that keeps the setup state"
+ui_step "$(ui_t step_state)"
 if ! gcloud storage buckets describe "gs://${state_bucket}" --project="$project_id" > /dev/null 2>&1; then
   ui_run gcloud storage buckets create "gs://${state_bucket}" \
     --project="$project_id" \
@@ -119,9 +126,9 @@ if ! gcloud storage buckets describe "gs://${state_bucket}" --project="$project_
     --public-access-prevention || ui_fail
   # Keeps the earlier states, so a bad apply can be recovered from.
   ui_run gcloud storage buckets update "gs://${state_bucket}" --versioning || ui_fail
-  created="created"
+  created="$(ui_t created)"
 else
-  created="already there"
+  created="$(ui_t already_there)"
 fi
 
 cat > backend.tf << EOF
@@ -137,20 +144,20 @@ ui_done "$created"
 # ---- 5. the administrator
 # The administrator is whoever runs this: they hold the GCP contract. Pin that
 # to their Google user id; without it the backend uses their email instead.
-ui_step "Finding who the administrator is"
+ui_step "$(ui_t step_admin)"
 admin_sub="$(google_user_id 2>> "$SP_LOG" || true)"
 admin_args=()
 if [ -n "$admin_sub" ]; then
   admin_args=(-var="admin_subs=[\"${admin_sub}\"]")
-  ui_done "your Google account"
+  ui_done "$(ui_t admin_account)"
 else
-  ui_done "could not read your Google user id; your email will be used"
-  echo "      Run this command again later to pin it to your user id, or set admin_subs"
-  echo "      (see terraform.tfvars.example)."
+  ui_done "$(ui_t admin_no_id)"
+  ui_t admin_no_id_note
+  echo
 fi
 
 # ---- 6. terraform init
-ui_step "Preparing Terraform"
+ui_step "$(ui_t step_init)"
 ui_run terraform init -input=false || ui_fail
 ui_done
 
@@ -158,7 +165,7 @@ ui_done
 # An API enabled a moment ago can still answer "not used before or disabled" from
 # some parts of Google for a minute or two. That is the only failure worth
 # waiting out; any other error stops at once, and so does a third attempt.
-ui_step "Creating your backend (this takes a few minutes)"
+ui_step "$(ui_t step_apply)"
 attempt=1
 while true; do
   mark="$(wc -c < "$SP_LOG" | tr -d ' ')"
@@ -169,7 +176,7 @@ while true; do
     break
   fi
   if [ "$attempt" -lt 3 ] && tail -c +"$((mark + 1))" "$SP_LOG" | grep -q "SERVICE_DISABLED"; then
-    printf ' (a service is not ready yet; trying again in 60 seconds) '
+    ui_t retrying
     sleep 60
     attempt=$((attempt + 1))
     continue
@@ -178,26 +185,20 @@ while true; do
 done
 ui_done
 
+# What this run did to the backend: made it, left it as it was, or changed it.
+apply_output="$(tail -c +"$((mark + 1))" "$SP_LOG")"
+if grep -q 'google_cloud_run_v2_service.backend: Creation complete' <<< "$apply_output"; then
+  outcome="created"
+elif grep -qE 'Resources: 0 added, 0 changed, 0 destroyed|No changes\.' <<< "$apply_output"; then
+  outcome="unchanged"
+else
+  outcome="updated"
+fi
+
 # ---- 8. the result
-ui_step "Reading the result"
+ui_step "$(ui_t step_result)"
 backend_url="$(terraform output -raw backend_url 2>> "$SP_LOG")" || ui_fail
 admin_check="$(terraform output -raw administrator_check 2>> "$SP_LOG" || echo "unknown")"
 ui_done
 
-# The URL is on a line of its own, flush left, so that selecting that one line
-# copies exactly the URL and nothing else.
-cat << EOF
-
-All done. Your SharePi backend is ready.
-
-What to do next
-  Open the SharePi app, go to Profile, and register the URL below.
-
-${backend_url}
-
-  Then sign in to the app with the same Google account you used in this Cloud
-  Shell. That account is the administrator (recognised by: ${admin_check}) and can
-  create groups and invite people.
-
-The log of this run: ${SP_LOG}
-EOF
+ui_final "$outcome" "$backend_url" "$admin_check"

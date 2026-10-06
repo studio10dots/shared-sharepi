@@ -50,7 +50,13 @@ case "$1" in
     if [ -n "${FAKE_APPLY_SLEEP:-}" ]; then sleep "$FAKE_APPLY_SLEEP"; fi
     n_file="$FAKE_DIR/apply_count"; n="$(( $(cat "$n_file" 2>/dev/null || echo 0) + 1 ))"; echo "$n" > "$n_file"
     case "${FAKE_APPLY:-ok}" in
-      ok) echo "Apply complete! Resources: 9 added."; exit 0 ;;
+      ok)
+        echo "google_cloud_run_v2_service.backend: Creation complete after 20s"
+        echo "Apply complete! Resources: 9 added, 0 changed, 0 destroyed."; exit 0 ;;
+      nochange)
+        echo "No changes. Your infrastructure matches the configuration."
+        echo "Apply complete! Resources: 0 added, 0 changed, 0 destroyed."; exit 0 ;;
+      updated) echo "Apply complete! Resources: 0 added, 1 changed, 0 destroyed."; exit 0 ;;
       flaky) if [ "$n" -lt 2 ]; then echo "Error 403: Service Usage API has not been used (SERVICE_DISABLED)"; exit 1; fi; echo "Apply complete!"; exit 0 ;;
       always_disabled) echo "Error 403: SERVICE_DISABLED"; exit 1 ;;
       other) echo "Error: something else entirely"; exit 1 ;;
@@ -73,8 +79,11 @@ run_setup() { # name, then FAKE_* assignments as arguments; sets $out, $rc, $log
   : > "$d/calls"
   rm -f "$d/apply_count"
   log="$d/setup.log"
-  out="$(env "$@" FAKE_CALLS="$d/calls" FAKE_DIR="$d" SHAREPI_SETUP_LOG="$log" SP_PROGRESS_INTERVAL=0.05 \
-    PATH="$work/bin:$PATH" HOME="$d" bash "$d/scripts/setup.sh" hoge-vfltdc ea 2>&1)"
+  # FAKE_LANG_ARG=ja adds the optional third argument; LANG is set to something
+  # that is not Japanese so that the language is chosen by the test alone.
+  out="$(env LANG=C LC_ALL= LC_MESSAGES= "$@" FAKE_CALLS="$d/calls" FAKE_DIR="$d" SHAREPI_SETUP_LOG="$log" SP_PROGRESS_INTERVAL=0.05 \
+    PATH="$work/bin:$PATH" HOME="$d" \
+    bash "$d/scripts/setup.sh" hoge-vfltdc ea ${FAKE_LANG_ARG_VALUE:-} 2>&1)"
   rc=$?
   calls="$(cat "$d/calls")"
 }
@@ -88,12 +97,17 @@ contains "success: steps are numbered" "$out" '[1/8] Checking your project ... o
 contains "success: the last step" "$out" '[8/8] Reading the result ... ok'
 contains "success: the URL is shown" "$out" 'https://sharepi-backend-123.asia-northeast1.run.app'
 contains "success: says what to do next" "$out" 'register the URL below'
-# On a line of its own, nothing else on it: that is what makes it copyable.
-if grep -qxF 'https://sharepi-backend-123.asia-northeast1.run.app' <<< "$out"; then
-  ok "success: the URL is on a line of its own"
-else
-  bad "success: the URL is not alone on its line"
-fi
+contains "success: a new backend is called ready" "$out" 'Your backend is ready.'
+url='https://sharepi-backend-123.asia-northeast1.run.app'
+# On a line of its own, nothing else on it, and the very last line: that is what
+# makes it the one thing left to copy.
+if grep -qxF "$url" <<< "$out"; then ok "success: the URL is on a line of its own"; else bad "success: the URL is not alone on its line"; fi
+[ "$(grep -v '^[[:space:]]*$' <<< "$out" | tail -n 1)" = "$url" ] && ok "success: the URL is the last line" || bad "success: the last line is not the URL"
+# The log's path comes before the URL, not after it.
+log_line="$(grep -n -F "$log" <<< "$out" | tail -n 1 | cut -d: -f1)"
+url_line="$(grep -n -x -F "$url" <<< "$out" | tail -n 1 | cut -d: -f1)"
+[ -n "$log_line" ] && [ "$log_line" -lt "$url_line" ] && ok "success: the log path is shown before the URL" || bad "success: the log path ($log_line) is not before the URL ($url_line)"
+contains "success: says where the log is" "$out" 'The details are in this log:'
 contains "success: the step line has no stray characters" "$out" '[7/8] Creating your backend (this takes a few minutes) ... ok'
 lacks "success: no escape codes without a terminal" "$out" $'\033'
 contains "success: names the log" "$out" "$log"
@@ -101,6 +115,31 @@ lacks "success: no command output on the screen" "$out" 'Terraform has been succ
 lacks "success: no resource lines on the screen" "$out" 'Creating...'
 contains "success: command output is in the log" "$(cat "$log")" 'Terraform has been successfully initialized'
 contains "success: the user id was passed on" "$calls" 'admin_subs=["110571000531995686849"]'
+
+# ---------------------------------------------------------------- what the run did to the backend
+run_setup unchanged FAKE_APPLY=nochange
+contains "outcome: nothing to change means it was already running" "$out" 'Your backend is already running.'
+[ "$(grep -v '^[[:space:]]*$' <<< "$out" | tail -n 1)" = "$url" ] && ok "outcome: an existing backend still ends on its URL" || bad "outcome: the last line is not the URL"
+run_setup updated FAKE_APPLY=updated
+contains "outcome: a change means it was updated" "$out" 'Your backend has been updated.'
+
+# ---------------------------------------------------------------- Japanese
+FAKE_LANG_ARG_VALUE=ja run_setup ja_unchanged FAKE_APPLY=nochange
+contains "ja: the steps are in Japanese" "$out" '[1/8] プロジェクトを確認しています ... 完了'
+contains "ja: says where the log is" "$out" '詳細のログは以下パスです。'
+contains "ja: an existing backend is called running" "$out" 'すでにバックエンドが起動済みです。以下のURLをモバイルアプリへ登録してください'
+[ "$(grep -v '^[[:space:]]*$' <<< "$out" | tail -n 1)" = "$url" ] && ok "ja: the URL is the last line" || bad "ja: the last line is not the URL"
+FAKE_LANG_ARG_VALUE=ja run_setup ja_created
+contains "ja: a new backend" "$out" 'バックエンドを作成しました。以下のURLをモバイルアプリへ登録してください'
+FAKE_LANG_ARG_VALUE=ja run_setup ja_billing FAKE_BILLING=False
+contains "ja: the billing explanation" "$out" '請求先アカウントが紐づいていません'
+contains "ja: the billing commands are unchanged" "$out" 'gcloud billing projects link hoge-vfltdc --billing-account=<ACCOUNT_ID>'
+# The shell's own language is used when none is given.
+run_setup ja_from_env LANG=ja_JP.UTF-8
+contains "ja: chosen from the shell's language" "$out" '[1/8] プロジェクトを確認しています'
+# A language with no translation is English.
+FAKE_LANG_ARG_VALUE=fr run_setup fr
+contains "other languages: English" "$out" '[1/8] Checking your project'
 
 # ---------------------------------------------------------------- billing not linked
 run_setup billing FAKE_BILLING=False

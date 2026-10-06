@@ -42,7 +42,17 @@ def read(fd):
     return data
 
 
-status = pty.spawn(["bash", setup, "hoge-vfltdc", "ea"], read)
+# pty.spawn also copies what the child prints to our own output; keep that out of
+# the test's report by pointing it at /dev/null while it runs.
+saved_stdout = os.dup(1)
+devnull = os.open(os.devnull, os.O_WRONLY)
+os.dup2(devnull, 1)
+try:
+    status = pty.spawn(["bash", setup, "hoge-vfltdc", "ea"], read)
+finally:
+    os.dup2(saved_stdout, 1)
+    os.close(devnull)
+    os.close(saved_stdout)
 exit_code = os.waitstatus_to_exitcode(status)
 text = captured.decode("utf-8", "replace")
 
@@ -62,11 +72,25 @@ check("tty: the banner is redrawn in place (cursor moves up)", text.count("\x1b[
 label = "[7/8] Creating your backend (this takes a few minutes) ... "
 frames = set(re.findall(re.escape("\r" + label) + r"([|/\\-])", text))
 check("tty: the spinner shows more than one frame (%s)" % "".join(sorted(frames)), len(frames) >= 2)
-check("tty: the step line ends on 'ok' after the spinner", ("\r" + label + "ok") in text)
+# (The cursor is shown again between the spinner and the "ok".)
+check("tty: the step line ends on 'ok' after the spinner",
+      re.search(re.escape("\r" + label) + r"(\x1b\[\?25h)?ok", text) is not None)
 
-lines = [line.strip("\r") for line in text.split("\n")]
-check("tty: the URL is on a line of its own",
-      "https://sharepi-backend-123.asia-northeast1.run.app" in lines)
+url = "https://sharepi-backend-123.asia-northeast1.run.app"
+# What can be seen: the escape codes (colours, the cursor) take no room on screen.
+visible = re.sub(r"\x1b\[[0-9;?]*[A-Za-z]", "", text)
+lines = [line.strip("\r") for line in visible.split("\n")]
+check("tty: the URL is on a line of its own", url in lines)
+non_empty = [line for line in lines if line.strip()]
+check("tty: the URL is the very last line", bool(non_empty) and non_empty[-1] == url)
+
+# The text cursor is hidden while the banner and the spinner are redrawn (it was
+# seen jumping about), and it is always shown again at the end.
+hide, show = "\x1b[?25l", "\x1b[?25h"
+check("tty: the cursor is hidden while things are redrawn", hide in text)
+check("tty: the cursor is shown again at the end", show in text and text.rfind(show) > text.rfind(hide))
+check("tty: the cursor is hidden once for the banner and once for the spinner",
+      text.count(hide) == 2 and text.count(show) >= 2)
 
 try:
     first = open(log, encoding="utf-8").readline()
