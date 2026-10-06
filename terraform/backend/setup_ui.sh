@@ -12,11 +12,23 @@
 # The messages are English: this runs in Cloud Shell for owners everywhere.
 
 SP_PROJECT=""
+SP_REGION=""
 SP_LOG=""
 SP_TOTAL=0
 SP_N=0
 SP_STEP_OFFSET=0
+SP_STEP_LABEL=""
 SP_KNOWN=1
+
+# Whether the screen is a terminal, decided once, here, where this file is
+# sourced. It must not be asked again inside $( ... ): there the output is a pipe
+# and the answer is always "no" (that is why the colours and the spinner once
+# never showed).
+if [ -z "${SP_TTY:-}" ]; then
+  SP_TTY=0
+  if [ -t 1 ]; then SP_TTY=1; fi
+fi
+SP_MODE="none"
 
 # The banner's art, one array entry per line.
 SP_ART=()
@@ -29,18 +41,19 @@ while IFS= read -r _sp_line; do SP_ART+=("$_sp_line"); done << 'BANNER'
 BANNER
 unset _sp_line
 
-# truecolor, 256 or none: what the terminal can show. Colour is off when the
-# output is not a terminal (a pipe, a file) or NO_COLOR is set. SP_COLOR forces a
-# mode (the tests do).
+# Sets SP_MODE to truecolor, 256 or none: what the terminal can show. Colour is
+# off when the output is not a terminal (a pipe, a file) or NO_COLOR is set.
+# SP_COLOR forces a mode (the tests do). It sets a variable rather than printing
+# the answer, so that nobody calls it inside $( ... ).
 ui_color_mode() {
   if [ -n "${SP_COLOR:-}" ]; then
-    echo "$SP_COLOR"
-  elif [ ! -t 1 ] || [ -n "${NO_COLOR:-}" ] || [ "${TERM:-dumb}" = "dumb" ]; then
-    echo none
+    SP_MODE="$SP_COLOR"
+  elif [ "$SP_TTY" -ne 1 ] || [ -n "${NO_COLOR:-}" ] || [ "${TERM:-dumb}" = "dumb" ]; then
+    SP_MODE="none"
   elif [ -n "${CLOUD_SHELL:-}" ] || [ "${COLORTERM:-}" = "truecolor" ] || [ "${COLORTERM:-}" = "24bit" ]; then
-    echo truecolor
+    SP_MODE="truecolor"
   else
-    echo 256
+    SP_MODE="256"
   fi
 }
 
@@ -65,7 +78,8 @@ ui_gradient() {
 # $1, the phase, so successive frames make the gradient slide along the letters.
 ui_banner_frame() {
   local phase="${1:-0}" mode r c ch line out="" pos
-  mode="$(ui_color_mode)"
+  ui_color_mode
+  mode="$SP_MODE"
   for r in "${!SP_ART[@]}"; do
     line="${SP_ART[$r]}"
     if [ "$mode" = none ]; then
@@ -96,7 +110,8 @@ ui_banner_frame() {
 # second and a half, redrawn in place; anywhere else it is printed once, plain.
 ui_banner() {
   echo
-  if [ "$(ui_color_mode)" != none ] && [ -t 1 ]; then
+  ui_color_mode
+  if [ "$SP_MODE" != none ] && [ "$SP_TTY" -eq 1 ]; then
     local lines=${#SP_ART[@]} f
     ui_banner_frame 0
     for ((f = 1; f <= 24; f++)); do
@@ -116,6 +131,10 @@ ui_init() {
   mkdir -p "$(dirname "$SP_LOG")"
   : > "$SP_LOG"
   chmod 600 "$SP_LOG" 2> /dev/null || true # it holds the project and the account's id
+  ui_color_mode
+  # What the screen was taken to be, so a colourless run can be understood.
+  printf 'terminal: tty=%s colour=%s TERM=%s COLORTERM=%s CLOUD_SHELL=%s\n' \
+    "$SP_TTY" "$SP_MODE" "${TERM:-}" "${COLORTERM:-}" "${CLOUD_SHELL:-}" >> "$SP_LOG"
   ui_banner
   echo "Setting up your SharePi backend. The details are written to:"
   echo "  $SP_LOG"
@@ -130,7 +149,8 @@ ui_step() {
   SP_N=$((SP_N + 1))
   printf '=== [%d/%d] %s\n' "$SP_N" "$SP_TOTAL" "$1" >> "$SP_LOG"
   SP_STEP_OFFSET="$(wc -c < "$SP_LOG" | tr -d ' ')"
-  printf '[%d/%d] %s ... ' "$SP_N" "$SP_TOTAL" "$1"
+  SP_STEP_LABEL="$(printf '[%d/%d] %s ... ' "$SP_N" "$SP_TOTAL" "$1")"
+  printf '%s' "$SP_STEP_LABEL"
 }
 
 ui_done() { echo "ok${1:+ ($1)}"; }
@@ -144,16 +164,17 @@ ui_run() { "$@" >> "$SP_LOG" 2>&1; }
 # printed while it waits.
 ui_run_progress() {
   "$@" >> "$SP_LOG" 2>&1 &
-  local pid=$! i=0 frames='|/-\' tty=0
-  if [ -t 1 ]; then tty=1; fi
+  local pid=$! i=0 frames='|/-\'
   while kill -0 "$pid" 2> /dev/null; do
-    if [ "$tty" -eq 1 ]; then
-      printf '%s\b' "${frames:i%4:1}"
+    if [ "$SP_TTY" -eq 1 ]; then
+      # The whole label is written again each time (\r goes back to the start of
+      # the line) rather than a backspace being relied on.
+      printf '\r%s%s' "$SP_STEP_LABEL" "${frames:i%4:1}"
       i=$((i + 1))
     fi
     sleep "${SP_PROGRESS_INTERVAL:-0.1}"
   done
-  if [ "$tty" -eq 1 ]; then printf ' \b'; fi
+  if [ "$SP_TTY" -eq 1 ]; then printf '\r%s' "$SP_STEP_LABEL"; fi
   wait "$pid"
 }
 
@@ -186,13 +207,18 @@ EOF
   elif grep -qE 'cannot destroy service without setting deletion_protection' <<< "$text"; then
     cat << EOF
 What happened
-  An existing Cloud Run service has to be replaced, and it is protected against
-  deletion.
+  The setup has to replace a Cloud Run service that already exists (for example
+  the one an older version created, "chamagon-backend"), and that service is
+  protected against deletion.
 
 What to do
-  Delete it by hand, then run the same setup command again:
+  1. See which service it is:
      gcloud run services list --project=$p
-     gcloud run services delete <SERVICE_NAME> --region=<REGION> --project=$p
+  2. Delete it (the older one is called chamagon-backend):
+     gcloud run services delete chamagon-backend --region=${SP_REGION:-<REGION>} --project=$p --quiet
+     Only the service is deleted. Your photos, groups and members stay in the
+     bucket.
+  3. Run the same setup command again.
 EOF
   elif grep -qiE 'Terraform is not installed|installed Terraform does not run|does not match the expected checksum|Could not download' <<< "$text"; then
     cat << EOF

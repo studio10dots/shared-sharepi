@@ -64,6 +64,7 @@ export TF_IN_AUTOMATION=1
 export TF_CLI_ARGS="-no-color"
 
 SP_PROJECT="$project_id"
+SP_REGION="$region"
 ui_init
 ui_total 8
 

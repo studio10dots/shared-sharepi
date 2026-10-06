@@ -46,6 +46,8 @@ case "$1" in
   init) echo "Terraform has been successfully initialized!"; exit 0 ;;
   apply)
     echo "google_project_service.required[\"run.googleapis.com\"]: Creating..."
+    # So that a spinner has time to turn (only the terminal test sets this).
+    if [ -n "${FAKE_APPLY_SLEEP:-}" ]; then sleep "$FAKE_APPLY_SLEEP"; fi
     n_file="$FAKE_DIR/apply_count"; n="$(( $(cat "$n_file" 2>/dev/null || echo 0) + 1 ))"; echo "$n" > "$n_file"
     case "${FAKE_APPLY:-ok}" in
       ok) echo "Apply complete! Resources: 9 added."; exit 0 ;;
@@ -181,6 +183,31 @@ ui_gradient 0;   [ "$SP_R,$SP_G,$SP_B" = "59,130,246" ] && ok "gradient: starts 
 ui_gradient 50;  [ "$SP_R,$SP_G,$SP_B" = "99,102,241" ] && ok "gradient: passes indigo" || bad "gradient middle: $SP_R,$SP_G,$SP_B"
 ui_gradient 100; [ "$SP_R,$SP_G,$SP_B" = "167,139,250" ] && ok "gradient: ends at violet" || bad "gradient end: $SP_R,$SP_G,$SP_B"
 unset SP_COLOR
+
+# The explanation of a protected Cloud Run service names the region and the command.
+SP_PROJECT=hoge-vfltdc
+SP_REGION=asia-northeast1
+protect="$(ui_explain "Error: cannot destroy service without setting deletion_protection=false")"
+contains "protected service: names the old service" "$protect" 'gcloud run services delete chamagon-backend --region=asia-northeast1 --project=hoge-vfltdc --quiet'
+contains "protected service: says the data stays" "$protect" 'Your photos, groups and members stay'
+
+# ---------------------------------------------------------------- on a terminal
+# The colours and the spinner only exist on a terminal, so this runs setup.sh in a
+# pseudo-terminal (it was a bug that they never showed on a real one).
+tty_python=""
+for candidate in python3 python; do
+  if "$candidate" -c 'import pty, os; os.waitstatus_to_exitcode' > /dev/null 2>&1; then tty_python="$candidate"; break; fi
+done
+if [ -z "$tty_python" ]; then
+  echo "skip terminal tests: no python with the pty module here"
+else
+  d="$work/tty"
+  mkdir -p "$d/scripts" "$d/bin"
+  cp "$here"/*.sh "$d/scripts/"
+  cp "$work/bin/gcloud" "$work/bin/terraform" "$d/bin/" # no stand-in sleep: the spinner needs real time
+  : > "$d/calls"
+  "$tty_python" "$here/setup_tty_test.py" "$d/scripts/setup.sh" "$d/bin" "$d" || fail=1
+fi
 
 # SETUP_TEST_SHOW=1 bash setup_test.sh shows what the owner sees in two cases.
 if [ -n "${SETUP_TEST_SHOW:-}" ]; then
