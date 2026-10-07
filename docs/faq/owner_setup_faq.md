@@ -160,8 +160,9 @@ gcloud billing projects link <プロジェクトID> --billing-account=<ACCOUNT_I
 この表示が出る版は、古いものです。もう一度、最新のコマンドを実行してください。手で入れるなら、
 上記の URL の手順に従います。
 
-**確認状況**: 確認済み(2026-10。Cloud Shell で、表示のあとも処理が先へ進むことを確認)。取得する処理は、
-テストで確認済みですが、実際の Cloud Shell では、まだ試していません。
+**確認状況**: 確認済み(2026-10。Cloud Shell で、表示のあとも処理が先へ進むことを確認。修正後は、
+Terraform が入っていない Cloud Shell で、セットアップのコマンドが Terraform を自動で取得して、最後まで実行できることも、
+実際の Cloud Shell で確認)。
 
 ## 11. 「data.google_client_openid_userinfo.me.email is null」というエラーが出た
 
