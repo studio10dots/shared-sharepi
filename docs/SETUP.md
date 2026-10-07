@@ -53,8 +53,8 @@ Cloud Console 右上の Cloud Shell を開く。`gcloud` が入っていて、�
 ## 5. オーナー: バックエンドの作成
 
 Cloud Shell で、リポジトリの Terraform を **コマンド1つ**で実行する。ファイルの編集は要らない
-(公開者の値 `backend_image`・`google_client_id` は `terraform/backend/publisher.auto.tfvars` にあり、
-Terraform が自動で読む)。アプリの「サーバー環境セットアップ手順」では、プロジェクトIDを入力すると
+(公開者の値は Terraform が自動で読む: `backend_image` は `terraform/backend/publisher.auto.tfvars`、
+Web クライアント ID は `config/prod.json`)。アプリの「サーバー環境セットアップ手順」では、プロジェクトIDを入力すると
 次の手順が現れ、IDと地域を埋め込んだこのコマンドが表示される。
 
 - **プロジェクトID**: Cloud Shell が最初に向いているプロジェクトは、作成したものとは限らない。
