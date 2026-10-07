@@ -77,7 +77,7 @@ ui_total 8
 
 # ---- 1. the project
 ui_step "$(ui_t step_project)"
-ui_run gcloud projects describe "$project_id" --format='value(projectId)' || ui_fail
+ui_run_progress gcloud projects describe "$project_id" --format='value(projectId)' || ui_fail
 # A project with no billing account is the most common first failure, and it is
 # cheaper to say so here than to let the first API call fail. If the answer
 # cannot be had (the Billing API may be off), carry on: a later step reports it.
@@ -105,7 +105,7 @@ ui_done
 # APIs at all). Keep this list in step with google_project_service.required in
 # main.tf, plus Service Usage and Cloud Resource Manager, which Terraform needs.
 ui_step "$(ui_t step_apis)"
-ui_run gcloud services enable \
+ui_run_progress gcloud services enable \
   serviceusage.googleapis.com \
   cloudresourcemanager.googleapis.com \
   storage.googleapis.com \
@@ -119,13 +119,13 @@ ui_done
 # ---- 4. where Terraform keeps its state
 ui_step "$(ui_t step_state)"
 if ! gcloud storage buckets describe "gs://${state_bucket}" --project="$project_id" > /dev/null 2>&1; then
-  ui_run gcloud storage buckets create "gs://${state_bucket}" \
+  ui_run_progress gcloud storage buckets create "gs://${state_bucket}" \
     --project="$project_id" \
     --location="$region" \
     --uniform-bucket-level-access \
     --public-access-prevention || ui_fail
   # Keeps the earlier states, so a bad apply can be recovered from.
-  ui_run gcloud storage buckets update "gs://${state_bucket}" --versioning || ui_fail
+  ui_run_progress gcloud storage buckets update "gs://${state_bucket}" --versioning || ui_fail
   created="$(ui_t created)"
 else
   created="$(ui_t already_there)"
@@ -152,13 +152,12 @@ if [ -n "$admin_sub" ]; then
   ui_done "$(ui_t admin_account)"
 else
   ui_done "$(ui_t admin_no_id)"
-  ui_t admin_no_id_note
-  echo
+  ui_print_lines admin_no_id_note
 fi
 
 # ---- 6. terraform init
 ui_step "$(ui_t step_init)"
-ui_run terraform init -input=false || ui_fail
+ui_run_progress terraform init -input=false || ui_fail
 ui_done
 
 # ---- 7. terraform apply

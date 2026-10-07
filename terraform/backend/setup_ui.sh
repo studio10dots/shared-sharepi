@@ -24,6 +24,13 @@ SP_N=0
 SP_STEP_OFFSET=0
 SP_STEP_LABEL=""
 SP_KNOWN=1
+# SP_K: how many rows the cursor is below the top of the banner (every line this
+# file prints is counted), so the banner can be redrawn from wherever a long step
+# has left the cursor. SP_PHASE: where in its colour cycle the banner is.
+# SP_LIVE: whether it may be redrawn while a step runs (see ui_init).
+SP_K=0
+SP_PHASE=0
+SP_LIVE=0
 
 # Whether the screen is a terminal, decided once, here, where this file is
 # sourced. It must not be asked again inside $( ... ): there the output is a pipe
@@ -212,10 +219,39 @@ ui_banner() {
       ui_banner_frame "$f"
     done
     ui_cursor_show
+    SP_PHASE=24
   else
     ui_banner_frame 0
   fi
   echo
+  SP_K=$((${#SP_ART[@]} + 1)) # the art, and the blank line after it
+}
+
+# The number of rows of the screen, 0 when it cannot be told.
+ui_rows() {
+  local r=""
+  r="$(stty size 2> /dev/null | cut -d' ' -f1)" || true
+  case "$r" in '' | *[!0-9]*) r="$(tput lines 2> /dev/null || true)" ;; esac
+  case "$r" in '' | *[!0-9]*) r=0 ;; esac
+  echo "$r"
+}
+
+# One more frame of the banner, drawn where it is: up SP_K rows, draw, back to
+# where the cursor was (ESC 7 and ESC 8 save and restore it). This is what keeps
+# the colours moving for as long as a step runs.
+ui_banner_live() {
+  printf '\e7\033[%dA\r' "$SP_K"
+  ui_banner_frame "$SP_PHASE"
+  printf '\e8'
+  SP_PHASE=$((SP_PHASE + 1))
+}
+
+# Prints a message of one or more lines, and counts them.
+ui_print_lines() {
+  local text
+  text="$(ui_t "$1")"
+  printf '%s\n' "$text"
+  SP_K=$((SP_K + $(printf '%s\n' "$text" | wc -l)))
 }
 
 # ---------------------------------------------------------------- the run
@@ -238,6 +274,14 @@ ui_init() {
   echo
   echo "  $SP_LOG"
   echo
+  SP_K=$((SP_K + 3))
+  # The banner is redrawn while steps run only where every row it needs is still on
+  # the screen: the steps below it and the longest message must fit, or "up SP_K
+  # rows" would land somewhere else. 26 rows is room for all of them.
+  if [ "$SP_MODE" != none ] && [ "$SP_TTY" -eq 1 ] && [ "$(ui_rows)" -ge 26 ]; then
+    SP_LIVE=1
+  fi
+  printf 'banner: live=%s rows=%s\n' "$SP_LIVE" "$(ui_rows)" >> "$SP_LOG"
 }
 
 ui_total() { SP_TOTAL="$1"; }
@@ -256,6 +300,7 @@ ui_done() {
   ui_t ok
   if [ -n "${1:-}" ]; then printf ' (%s)' "$1"; fi
   echo
+  SP_K=$((SP_K + 1))
 }
 
 # Runs a command with everything it prints going to the log. Functions run in
@@ -271,6 +316,7 @@ ui_run_progress() {
   ui_cursor_hide
   while kill -0 "$pid" 2> /dev/null; do
     if [ "$SP_TTY" -eq 1 ]; then
+      if [ "$SP_LIVE" -eq 1 ]; then ui_banner_live; fi
       # The whole label is written again each time (\r goes back to the start of
       # the line) rather than a backspace being relied on.
       printf '\r%s%s' "$SP_STEP_LABEL" "${frames:i%4:1}"
