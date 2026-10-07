@@ -104,6 +104,13 @@ Error setting IAM policy for storage bucket ...: googleapi: Error 404: The speci
 ## 7. 「cannot destroy service without setting deletion_protection=false」というエラーが出た(削除したいとき)
 
 **原因**: 誤って消さないように、Cloud Run サービスには**削除保護**が付いています(既定で有効)。
+このエラーは、セットアップが Cloud Run のサービスを**作り直す(いったん消して、作る)必要があるとき**にだけ出ます。
+サービスの**名前**や**リージョン**が変わるときが、これにあたります(実際に、名前を `chamagon-backend` から
+`sharepi-backend` に変えた版で起きました)。
+
+**起きないとき**: 新しいバージョンのコンテナ(`backend_image` の更新)に入れ替えるだけなら、サービスは
+作り直さず、**その場で更新**(新しいリビジョンを作る)されるので、削除保護があっても、このエラーは出ません。
+同じバージョンのまま、もう一度実行したときも、変更なしで終わります。
 
 **対処**: 先に保護を外してから消します。値は保存済みの状態から読まれるため、`destroy` だけに
 `false` を付けても効きません。
@@ -113,7 +120,9 @@ terraform apply -var="deletion_protection=false" ...   # これまでと同じ -
 terraform destroy ...
 ```
 
-**確認状況**: 確認済み(2026-10)。
+**確認状況**: 確認済み(2026-10)。作り直しのときだけ起きて、コンテナの更新では起きないことは、
+Terraform の仕様(名前・リージョンは変更不可、イメージは変更可能)からの説明で、実際のコンテナの更新では、
+まだ試していません。
 
 ## 8. アプリで管理者と表示されない / グループを作れない
 
@@ -124,3 +133,75 @@ terraform destroy ...
 入れ替わるだけで、写真のデータには触れません。
 
 **確認状況**: **推測**(コードとテストから。実際の Cloud Shell と実機では、まだ再現していません)。
+
+## 9. 「The billing account for the owning project is disabled in state absent」というエラーが出た
+
+**原因**: このプロジェクトに、**課金アカウントが紐づいていません**(`absent` は、紐づけが無いという意味)。
+課金アカウントを作ったことと、それをプロジェクトに紐づけることは、別の操作です。
+
+**対処**: 紐づけてから、同じコマンドをもう一度実行します(最初のバケットの作成で止まるので、途中までの作成物はありません)。
+
+```bash
+gcloud billing projects describe <プロジェクトID>     # billingEnabled: false なら未紐づけ
+gcloud billing accounts list                          # ACCOUNT_ID と OPEN を確認
+gcloud billing projects link <プロジェクトID> --billing-account=<ACCOUNT_ID>
+```
+
+コマンドに入れたプロジェクト ID が、課金を設定したものと同じかも確認します(`gcloud projects list`)。
+
+**確認状況**: 確認済み(2026-10)。
+
+## 10. Terraform の「Follow the instructions at https://developer.hashicorp.com/terraform/install」という表示が出た
+
+**原因**: Cloud Shell に、Terraform が入っていません(インストール方法を表示するだけのものが置かれていて、
+表示したあと正常終了するため、気づかずに先へ進むことがあります)。
+
+**対処**: セットアップのコマンドは、Terraform が無ければ、公式の配布元から取得します(チェックサムを確かめます)。
+この表示が出る版は、古いものです。もう一度、最新のコマンドを実行してください。手で入れるなら、
+上記の URL の手順に従います。
+
+**確認状況**: 確認済み(2026-10。Cloud Shell で、表示のあとも処理が先へ進むことを確認。修正後は、
+Terraform が入っていない Cloud Shell で、セットアップのコマンドが Terraform を自動で取得して、最後まで実行できることも、
+実際の Cloud Shell で確認)。
+
+## 11. 「data.google_client_openid_userinfo.me.email is null」というエラーが出た
+
+```
+Error: Invalid function argument
+  on main.tf line 10, in locals:
+  data.google_client_openid_userinfo.me.email is null
+```
+
+**原因**: Cloud Shell の認証情報に、メールアドレスが含まれていません。管理者は、実行したアカウントの
+Google ユーザー ID で決まるので、メールは本来、必要ありませんが、古い版は、メールを必ず読もうとして止まっていました。
+
+**対処**: 最新のコマンドを、もう一度実行します(メールが読めなくても、ユーザー ID が読めれば、そのまま進みます)。
+ユーザー ID も読めないときは、「誰も管理者になれない」ことを知らせるエラーで止まります。そのときは、
+アプリでログインしているアカウントの Cloud Shell で、もう一度実行してください。
+
+**確認状況**: 確認済み(2026-10。Cloud Shell で再現し、修正後のコマンドで、最後まで実行できることも確認)。
+
+## 12. 「Service Usage API has not been used in project ... before or it is disabled」(SERVICE_DISABLED)というエラーが出た
+
+```
+Error: Error when reading or editing Project Service : ... Error 403: Service Usage API has not been used in project ...
+Error: Error creating Bucket: ... Cloud Logging API has not been used in project ...
+```
+
+**原因**: 新しいプロジェクトでは、Terraform が使う API(Service Usage、Cloud Logging など)が、まだ有効になっていません。
+Terraform が API を有効にするには、その Service Usage API が、先に有効である必要があります。
+
+**対処**: 最新のコマンドは、Terraform を動かす前に、必要な API を `gcloud` で有効にします。有効にした直後は、
+数十秒〜数分のあいだ、このエラーが出ることがあるので、**最大 3 回、60 秒おきに自動でやり直します**。それでも
+出るときは、数分待って、同じコマンドをもう一度実行してください。
+
+手で有効にするなら、次のとおりです。
+
+```bash
+gcloud services enable serviceusage.googleapis.com cloudresourcemanager.googleapis.com \
+  storage.googleapis.com logging.googleapis.com run.googleapis.com iam.googleapis.com \
+  iamcredentials.googleapis.com --project=<プロジェクトID>
+```
+
+**確認状況**: 確認済み(2026-10。Cloud Shell で再現し、修正後のコマンドで、最後まで実行できることも確認)。
+自動のやり直しが、実際に働いたかどうかは、確認していません(再試行の仕組みは、テスト用の偽の応答で確認済み)。

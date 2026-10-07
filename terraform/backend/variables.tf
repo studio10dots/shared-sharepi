@@ -102,7 +102,7 @@ variable "web_image" {
 }
 
 variable "web_origin_override" {
-  description = "Override for the Web build's own origin, if Cloud Run's predictable URL format (https://chamagon-web-<project number>.<region>.run.app) ever does not hold for your project. Only used when enable_web is true."
+  description = "Override for the Web build's own origin, if Cloud Run's predictable URL format (https://sharepi-web-<project number>.<region>.run.app) ever does not hold for your project. Only used when enable_web is true."
   type        = string
   default     = null
 }

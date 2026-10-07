@@ -40,3 +40,18 @@ jobs:
         run: |
           terraform init -backend=false -input=false
           terraform validate
+
+  # The scripts an owner runs in Cloud Shell. They are tested here without
+  # Google or HashiCorp: the tests replace curl, uname and gcloud's answers.
+  scripts:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: terraform/backend
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: bash -n setup.sh setup_ui.sh ensure_terraform.sh google_user_id.sh region.sh
+      - run: bash ensure_terraform_test.sh
+      - run: bash google_user_id_test.sh
+      # setup.sh end to end, against stand-ins for gcloud and terraform.
+      - run: bash setup_test.sh
