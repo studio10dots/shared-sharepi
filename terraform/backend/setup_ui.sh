@@ -44,80 +44,40 @@ SP_MODE="none"
 
 # ---------------------------------------------------------------- language
 
+# The words are in setup_msg_<code>.sh, one file per language (en is the
+# reference; setup_test.sh checks that the others have everything it has).
+SP_LANGUAGES="en ja es fr de pt ko"
+for _sp_code in $SP_LANGUAGES; do
+  # shellcheck source=setup_msg_en.sh
+  source "$(dirname "${BASH_SOURCE[0]}")/setup_msg_${_sp_code}.sh"
+done
+unset _sp_code
+
 # SP_LANG: the language given on the command line (SHAREPI_LANG), else the one the
-# shell is set to, else English. Only "ja" has a translation; anything else is
-# English.
+# shell is set to, else English. Only the first two letters count (ja_JP.UTF-8,
+# pt-BR, ko_KR all work); a language with no translation is English.
 ui_lang() {
   local want="${SHAREPI_LANG:-${LC_ALL:-${LC_MESSAGES:-${LANG:-}}}}"
-  case "$want" in
-    ja | ja_* | ja-* | ja.*) SP_LANG="ja" ;;
+  want="$(printf '%s' "$want" | cut -c1-2 | tr 'A-Z' 'a-z')"
+  case " $SP_LANGUAGES " in
+    *" $want "*) SP_LANG="$want" ;;
     *) SP_LANG="en" ;;
   esac
 }
 
-# A short message by key. Arguments (%s) follow the key.
+# A short message by key. Arguments (%s) follow the key. A key a language lacks is
+# shown in English.
 ui_t() {
   local key="$1"
   shift
   local fmt
-  case "$SP_LANG/$key" in
-    en/intro) fmt='Setting up your SharePi backend. The details are written to:' ;;
-    ja/intro) fmt='SharePi のバックエンドをセットアップします。詳しい内容は次のログに書き込みます:' ;;
-    en/step_project) fmt='Checking your project' ;;
-    ja/step_project) fmt='プロジェクトを確認しています' ;;
-    en/step_terraform) fmt='Getting Terraform ready' ;;
-    ja/step_terraform) fmt='Terraform を準備しています' ;;
-    en/step_apis) fmt='Turning on the Google Cloud services it uses' ;;
-    ja/step_apis) fmt='必要な Google Cloud のサービスを有効にしています' ;;
-    en/step_state) fmt='Preparing the place that keeps the setup state' ;;
-    ja/step_state) fmt='セットアップの状態を保存する場所を準備しています' ;;
-    en/step_admin) fmt='Finding who the administrator is' ;;
-    ja/step_admin) fmt='管理者を確認しています' ;;
-    en/step_init) fmt='Preparing Terraform' ;;
-    ja/step_init) fmt='Terraform を初期化しています' ;;
-    en/step_apply) fmt='Creating your backend (this takes a few minutes)' ;;
-    ja/step_apply) fmt='バックエンドを作成しています(数分かかります)' ;;
-    en/step_result) fmt='Reading the result' ;;
-    ja/step_result) fmt='結果を読み取っています' ;;
-    en/ok) fmt='ok' ;;
-    ja/ok) fmt='完了' ;;
-    en/failed) fmt='failed' ;;
-    ja/failed) fmt='失敗' ;;
-    en/created) fmt='created' ;;
-    ja/created) fmt='作成しました' ;;
-    en/already_there) fmt='already there' ;;
-    ja/already_there) fmt='すでにあります' ;;
-    en/admin_account) fmt='your Google account' ;;
-    ja/admin_account) fmt='あなたの Google アカウント' ;;
-    en/admin_no_id) fmt='could not read your Google user id; your email will be used' ;;
-    ja/admin_no_id) fmt='Google のユーザー ID を読み取れなかったため、メールアドレスで判定します' ;;
-    en/admin_no_id_note) fmt='      Run this command again later to pin it to your user id, or set admin_subs\n      (see terraform.tfvars.example).' ;;
-    ja/admin_no_id_note) fmt='      あとでこのコマンドをもう一度実行すると、ユーザー ID で判定するようになります。\n      または admin_subs を指定します(terraform.tfvars.example を参照)。' ;;
-    en/retrying) fmt=' (a service is not ready yet; trying again in 60 seconds) ' ;;
-    ja/retrying) fmt=' (サービスの準備がまだ終わっていません。60 秒後にやり直します) ' ;;
-    en/what_happened) fmt='What happened' ;;
-    ja/what_happened) fmt='何が起きたか' ;;
-    en/what_to_do) fmt='What to do' ;;
-    ja/what_to_do) fmt='次にやること' ;;
-    en/last_lines) fmt="The last lines of what the step printed:" ;;
-    ja/last_lines) fmt='このステップが最後に出力した内容:' ;;
-    en/full_log) fmt='Full log: %s' ;;
-    ja/full_log) fmt='詳しいログ: %s' ;;
-    en/final_admin) fmt='Sign in to the app with the same Google account you used in this Cloud Shell:\nit is the administrator (recognised by: %s) and can create groups and invite people.' ;;
-    ja/final_admin) fmt='アプリには、この Cloud Shell と同じ Google アカウントでログインしてください。\nそのアカウントが管理者(判定方法: %s)で、グループの作成と招待ができます。' ;;
-    en/final_log) fmt='The details are in this log:' ;;
-    ja/final_log) fmt='詳細のログは以下パスです。' ;;
-    en/final_created) fmt='Your backend is ready. In the SharePi app, go to Profile and register the URL below:' ;;
-    ja/final_created) fmt='バックエンドを作成しました。以下のURLをモバイルアプリへ登録してください' ;;
-    en/final_unchanged) fmt='Your backend is already running. In the SharePi app, go to Profile and register the URL below:' ;;
-    ja/final_unchanged) fmt='すでにバックエンドが起動済みです。以下のURLをモバイルアプリへ登録してください' ;;
-    en/final_updated) fmt='Your backend has been updated. In the SharePi app, go to Profile and register the URL below:' ;;
-    ja/final_updated) fmt='バックエンドを更新しました。以下のURLをモバイルアプリへ登録してください' ;;
-    *) fmt="$key" ;;
-  esac
+  fmt="$("ui_fmt_$SP_LANG" "$key")"
+  if [ -z "$fmt" ]; then fmt="$(ui_fmt_en "$key")"; fi
+  if [ -z "$fmt" ]; then fmt="$key"; fi
   # shellcheck disable=SC2059
   printf "$fmt" "$@"
 }
+
 
 # ---------------------------------------------------------------- banner
 
@@ -361,216 +321,13 @@ ui_classify() {
   fi
 }
 
-# "What happened" and "What to do" for a kind of failure, in SP_LANG.
+# "What happened" and "What to do" for a kind of failure, in SP_LANG (the text is
+# in setup_msg_<code>.sh).
 ui_explain_text() {
-  local kind="$1" p="${SP_PROJECT:-<PROJECT_ID>}" r="${SP_REGION:-<REGION>}"
   printf '%s\n' "$(ui_t what_happened)"
-  case "$SP_LANG/$kind" in
-    en/billing) cat << EOF
-  This project has no billing account linked, and Google Cloud will not create
-  anything without one. Nothing has been created yet.
-
-$(ui_t what_to_do)
-  1. Open https://console.cloud.google.com/billing/linkedaccount?project=$p
-  2. Click "Link a billing account" and choose your billing account.
-     (No billing account yet? Create one at https://console.cloud.google.com/billing
-     and link it to the project.)
-  Or here, in Cloud Shell:
-     gcloud billing accounts list
-     gcloud billing projects link $p --billing-account=<ACCOUNT_ID>
-
-Then run the same setup command again. It is safe to repeat.
-EOF
-      ;;
-    ja/billing) cat << EOF
-  このプロジェクトには請求先アカウントが紐づいていません。紐づいていないと、
-  Google Cloud は何も作成できません。まだ何も作成されていません。
-
-$(ui_t what_to_do)
-  1. https://console.cloud.google.com/billing/linkedaccount?project=$p を開く
-  2. 「請求先アカウントをリンク」を押して、請求先アカウントを選ぶ。
-     (請求先アカウントがまだない場合は、https://console.cloud.google.com/billing
-     で作成して、プロジェクトに紐づけます。)
-  または、この Cloud Shell で:
-     gcloud billing accounts list
-     gcloud billing projects link $p --billing-account=<ACCOUNT_ID>
-
-そのあと、同じセットアップのコマンドをもう一度実行してください。何度実行しても安全です。
-EOF
-      ;;
-    en/protected) cat << EOF
-  The setup has to replace a Cloud Run service that already exists (for example
-  the one an older version created, "chamagon-backend"), and that service is
-  protected against deletion.
-
-$(ui_t what_to_do)
-  1. See which service it is:
-     gcloud run services list --project=$p
-  2. Delete it (the older one is called chamagon-backend):
-     gcloud run services delete chamagon-backend --region=$r --project=$p --quiet
-     Only the service is deleted. Your photos, groups and members stay in the
-     bucket.
-  3. Run the same setup command again.
-EOF
-      ;;
-    ja/protected) cat << EOF
-  すでにある Cloud Run のサービス(古い版が作った "chamagon-backend" など)を作り直す
-  必要がありますが、そのサービスは削除から保護されています。
-
-$(ui_t what_to_do)
-  1. どのサービスか確認する:
-     gcloud run services list --project=$p
-  2. 削除する(古い版のものは chamagon-backend という名前です):
-     gcloud run services delete chamagon-backend --region=$r --project=$p --quiet
-     削除されるのはサービスだけです。写真、グループ、メンバーはバケットに残ります。
-  3. 同じセットアップのコマンドをもう一度実行する。
-EOF
-      ;;
-    en/terraform) cat << EOF
-  Terraform is not installed in this Cloud Shell, and it could not be fetched
-  automatically.
-
-$(ui_t what_to_do)
-  Install it by following https://developer.hashicorp.com/terraform/install,
-  then run the same setup command again.
-EOF
-      ;;
-    ja/terraform) cat << EOF
-  この Cloud Shell には Terraform が入っておらず、自動での取得もできませんでした。
-
-$(ui_t what_to_do)
-  https://developer.hashicorp.com/terraform/install の手順で Terraform を入れてから、
-  同じセットアップのコマンドをもう一度実行してください。
-EOF
-      ;;
-    en/not_ready) cat << EOF
-  A Google Cloud API that was turned on a moment ago is not active everywhere yet.
-  This usually clears within a few minutes.
-
-$(ui_t what_to_do)
-  Wait two or three minutes, then run the same setup command again.
-EOF
-      ;;
-    ja/not_ready) cat << EOF
-  さきほど有効にした Google Cloud の API が、まだすべての場所で有効になっていません。
-  通常は数分で解消します。
-
-$(ui_t what_to_do)
-  2〜3 分待ってから、同じセットアップのコマンドをもう一度実行してください。
-EOF
-      ;;
-    en/quota) cat << EOF
-  Google Cloud refused to start Cloud Run in this region for now (a per-project
-  limit on how many regions a project may start using in a short time).
-
-$(ui_t what_to_do)
-  Wait a few minutes and run the same setup command again. If it keeps
-  happening, try a different area code (the second argument) in a new project.
-EOF
-      ;;
-    ja/quota) cat << EOF
-  Google Cloud が、このリージョンで Cloud Run を開始することを、いまは拒否しました
-  (短い時間に使い始められるリージョンの数に、プロジェクトごとの上限があります)。
-
-$(ui_t what_to_do)
-  数分待ってから、同じセットアップのコマンドをもう一度実行してください。
-  何度も起きる場合は、新しいプロジェクトで、別の地域コード(2 番目の引数)を試してください。
-EOF
-      ;;
-    en/bucket_taken) cat << EOF
-  The name for the setup-state bucket ("$p-tfstate") is already taken by
-  another project. Bucket names are shared by everyone on Google Cloud.
-
-$(ui_t what_to_do)
-  Use a project whose ID has not been used for a bucket before. Do not try to
-  reuse a bucket you do not own.
-EOF
-      ;;
-    ja/bucket_taken) cat << EOF
-  セットアップの状態を保存するバケットの名前("$p-tfstate")は、すでに別のプロジェクトで
-  使われています。バケット名は、Google Cloud の全員で共有されています。
-
-$(ui_t what_to_do)
-  バケットに使われたことのない ID のプロジェクトを使ってください。自分のものでない
-  バケットを使おうとしないでください。
-EOF
-      ;;
-    en/no_project) cat << EOF
-  Google Cloud cannot find a project with the ID "$p", or this account cannot see it.
-
-$(ui_t what_to_do)
-  1. List the projects this account can see, and copy the ID (not the name):
-     gcloud projects list
-  2. Make sure Cloud Shell is signed in with the account that created the project.
-  3. Run the setup command again with the right project ID.
-EOF
-      ;;
-    ja/no_project) cat << EOF
-  ID が "$p" のプロジェクトが見つからないか、このアカウントからは見えません。
-
-$(ui_t what_to_do)
-  1. このアカウントから見えるプロジェクトを一覧して、ID(名前ではなく)をコピーする:
-     gcloud projects list
-  2. Cloud Shell が、プロジェクトを作ったアカウントでログインしているか確認する。
-  3. 正しいプロジェクト ID で、セットアップのコマンドをもう一度実行する。
-EOF
-      ;;
-    en/permission) cat << EOF
-  This account is not allowed to do that in project "$p".
-
-$(ui_t what_to_do)
-  1. Use the account that created the project (or that has the Owner role on it).
-     It is shown at the top right of the Cloud Shell window.
-  2. Check that the project ID is the one you meant:
-     gcloud projects list
-  3. Run the same setup command again.
-EOF
-      ;;
-    ja/permission) cat << EOF
-  このアカウントには、プロジェクト "$p" でその操作をする権限がありません。
-
-$(ui_t what_to_do)
-  1. プロジェクトを作ったアカウント(またはオーナーの役割を持つアカウント)を使う。
-     Cloud Shell の画面の右上に表示されています。
-  2. プロジェクト ID が、意図したものか確認する:
-     gcloud projects list
-  3. 同じセットアップのコマンドをもう一度実行する。
-EOF
-      ;;
-    en/network) cat << EOF
-  A network request failed.
-
-$(ui_t what_to_do)
-  Wait a minute and run the same setup command again.
-EOF
-      ;;
-    ja/network) cat << EOF
-  ネットワークの通信に失敗しました。
-
-$(ui_t what_to_do)
-  1 分ほど待ってから、同じセットアップのコマンドをもう一度実行してください。
-EOF
-      ;;
-    en/*) cat << EOF
-  A step failed, and the cause is not one this script knows.
-
-$(ui_t what_to_do)
-  Run the same setup command again; many failures clear on a second try. If it
-  fails the same way, send the log file named below to the person who gave you
-  this command. It does not contain passwords or tokens.
-EOF
-      ;;
-    ja/*) cat << EOF
-  ステップが失敗しましたが、原因は、このスクリプトが知っているものではありません。
-
-$(ui_t what_to_do)
-  同じセットアップのコマンドをもう一度実行してください。2 回目で解消する失敗も多くあります。
-  同じように失敗する場合は、下に表示するログファイルを、このコマンドを教えてくれた人に
-  送ってください。パスワードやトークンは含まれていません。
-EOF
-      ;;
-  esac
+  "ui_body_$SP_LANG" "$1"
 }
+
 
 # Prints "what happened" and "what to do" for the text of a failed step ($1) and
 # sets SP_KNOWN to 0 when the cause is not one this script knows.
