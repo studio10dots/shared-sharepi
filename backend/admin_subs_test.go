@@ -77,8 +77,8 @@ func TestParseList(t *testing.T) {
 	if len(got) != 2 || !got["a@x.com"] || !got["b@y.com"] {
 		t.Errorf("emails: got %v", got)
 	}
-	got = parseList("110571000531995686849, 109538459286029168202", false)
-	if len(got) != 2 || !got["110571000531995686849"] || !got["109538459286029168202"] {
+	got = parseList("100000000000000000001, 100000000000000000002", false)
+	if len(got) != 2 || !got["100000000000000000001"] || !got["100000000000000000002"] {
 		t.Errorf("subs: got %v", got)
 	}
 	if len(parseList("", false)) != 0 || len(parseList(" , ", true)) != 0 {
@@ -88,7 +88,7 @@ func TestParseList(t *testing.T) {
 
 func TestAdminModeLogNamesTheModeNotThePeople(t *testing.T) {
 	bySub := adminModeLog(Config{
-		AdminSubs:   map[string]bool{"110571000531995686849": true},
+		AdminSubs:   map[string]bool{"100000000000000000001": true},
 		AdminEmails: map[string]bool{"a@x.com": true},
 	})
 	if !strings.Contains(bySub, "ADMIN_SUBS") || !strings.Contains(bySub, "ignored") {
@@ -99,7 +99,7 @@ func TestAdminModeLogNamesTheModeNotThePeople(t *testing.T) {
 		t.Errorf("email mode: %q", byEmail)
 	}
 	for _, line := range []string{bySub, byEmail} {
-		if strings.Contains(line, "110571000531995686849") || strings.Contains(line, "a@x.com") {
+		if strings.Contains(line, "100000000000000000001") || strings.Contains(line, "a@x.com") {
 			t.Errorf("the log line must not name anyone: %q", line)
 		}
 	}
