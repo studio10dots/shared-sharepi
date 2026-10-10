@@ -20,7 +20,7 @@ work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
 # A JWT whose payload carries a user id, which is what the gcloud stand-in prints.
-payload="$(printf '%s' '{"sub":"110571000531995686849","email":"a@b.c"}' | base64 | tr -d '\n=' | tr '+/' '-_')"
+payload="$(printf '%s' '{"sub":"100000000000000000001","email":"a@b.c"}' | base64 | tr -d '\n=' | tr '+/' '-_')"
 fake_jwt="eyJhbGciOiJSUzI1NiJ9.${payload}.c2ln"
 
 # --- stand-ins, steered by FAKE_* variables
@@ -114,7 +114,7 @@ contains "success: names the log" "$out" "$log"
 lacks "success: no command output on the screen" "$out" 'Terraform has been successfully initialized'
 lacks "success: no resource lines on the screen" "$out" 'Creating...'
 contains "success: command output is in the log" "$(cat "$log")" 'Terraform has been successfully initialized'
-contains "success: the user id was passed on" "$calls" 'admin_subs=["110571000531995686849"]'
+contains "success: the user id was passed on" "$calls" 'admin_subs=["100000000000000000001"]'
 
 # ---------------------------------------------------------------- what the run did to the backend
 run_setup unchanged FAKE_APPLY=nochange

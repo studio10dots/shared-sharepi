@@ -2,10 +2,16 @@
 # Sets up, or updates, an owner's backend in one go. docs/SETUP.md and the app's
 # setup guide give the one command that runs it from a fresh clone:
 #
-#   bash setup.sh <project_id> <area code> [language]
+#   bash setup.sh <project_id> <area code> [language] [google_user_id]
 #
 # The language is optional: "ja" for Japanese, anything else (or nothing) for the
 # language the shell is set to, else English.
+#
+# google_user_id is optional too: the administrator's Google user id (10-30
+# digits). The app's setup guide puts the signed-in account's id here, so the
+# owner never has to know it, and the command also works where there is no gcloud
+# to read it from. When it is given it is used as it is; when it is not, the id of
+# the account running this script is read with gcloud (step 5).
 #
 # What it does, in order (each is one line on the screen; everything the commands
 # print goes to a log file, and a failure says what to do next: setup_ui.sh):
@@ -32,15 +38,21 @@
 
 set -euo pipefail
 
-if [ "$#" -lt 2 ] || [ "$#" -gt 3 ]; then
-  echo "usage: bash setup.sh <project_id> <area code> [language]" >&2
+if [ "$#" -lt 2 ] || [ "$#" -gt 4 ]; then
+  echo "usage: bash setup.sh <project_id> <area code> [language] [google_user_id]" >&2
   exit 2
 fi
 
 project_id="$1"
 area="$2"
-if [ "$#" -eq 3 ]; then
+if [ "$#" -ge 3 ]; then
   export SHAREPI_LANG="$3"
+fi
+given_sub="${4:-}"
+# Typed into a Terraform variable, so only a plain Google user id gets through.
+if [ -n "$given_sub" ] && ! [[ "$given_sub" =~ ^[0-9]{10,30}$ ]]; then
+  echo "google_user_id must be 10-30 digits (the account's Google user id)." >&2
+  exit 2
 fi
 
 # Same rule as variables.tf, checked here first because a bucket is created
@@ -145,7 +157,10 @@ ui_done "$created"
 # The administrator is whoever runs this: they hold the GCP contract. Pin that
 # to their Google user id; without it the backend uses their email instead.
 ui_step "$(ui_t step_admin)"
-admin_sub="$(google_user_id 2>> "$SP_LOG" || true)"
+admin_sub="$given_sub"
+if [ -z "$admin_sub" ]; then
+  admin_sub="$(google_user_id 2>> "$SP_LOG" || true)"
+fi
 admin_args=()
 if [ -n "$admin_sub" ]; then
   admin_args=(-var="admin_subs=[\"${admin_sub}\"]")

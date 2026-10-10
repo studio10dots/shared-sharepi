@@ -63,7 +63,7 @@ variable "admin_emails" {
 
 variable "admin_subs" {
   description = <<-EOT
-    Google user ids (the `sub` of the account's ID token, e.g. "110571000531995686849")
+    Google user ids (the `sub` of the account's ID token, e.g. "100000000000000000001")
     of the administrators. When set, the backend decides who is an administrator by
     these ids alone and ignores admin_emails: an email address can change hands,
     a user id never does. setup.sh fills in the id of the account running it.
