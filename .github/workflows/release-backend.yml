@@ -17,6 +17,25 @@ name: Release backend
 # Minor or major release (or the first one): git tag backend-v1.2.0 && git push origin backend-v1.2.0
 # A tag created by this workflow does not start it again (GITHUB_TOKEN pushes
 # never trigger workflows), so there is no loop.
+#
+# A release also makes the AWS program: the Linux build of the backend, zipped as
+# bootstrap-linux-amd64.zip (the file inside is named `bootstrap`, which
+# terraform/backend-aws/setup.sh unzips), attached to the GitHub Release of the
+# same tag. Its SHA-256 is NOT published next to it: setup.sh checks the zip
+# against the value kept in the repository (terraform/backend-aws/program.env),
+# so swapping the Release asset alone is detected.
+#
+# Last, the bot opens a pull request that moves backend_image
+# (terraform/backend/publisher.auto.tfvars) and the program's URL and SHA-256
+# (terraform/backend-aws/program.env) to this release. A person merges it. Owners
+# clone the default branch, so a release reaches them only once that pull request
+# is merged; until then they keep getting the previous version. (This needs the
+# repository setting Settings -> Actions -> General -> "Allow GitHub Actions to
+# create and approve pull requests".)
+#
+# Trying it without publishing anything: run it by hand (workflow_dispatch) with
+# dry_run on. It builds the image without pushing it and builds the zip, prints
+# the SHA-256, and stops: no tag, no Release, no pull request.
 
 on:
   push:
@@ -31,6 +50,10 @@ on:
       version:
         description: "Version to publish, e.g. 1.2.3 (no leading v). Empty: next patch of the highest tag."
         required: false
+      dry_run:
+        description: "Build the image (not pushed) and the zip, print the SHA-256, publish nothing."
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -62,8 +85,12 @@ jobs:
     needs: test
     runs-on: ubuntu-24.04
     permissions:
-      contents: write # creates the backend-vX.Y.Z tag
+      contents: write # creates the backend-vX.Y.Z tag and its Release
       packages: write
+    outputs:
+      version: ${{ steps.ver.outputs.full }}
+      zip_sha256: ${{ steps.zip.outputs.sha256 }}
+      published: ${{ steps.release.outputs.done }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -111,7 +138,7 @@ jobs:
         with:
           context: backend
           platforms: linux/amd64
-          push: true
+          push: ${{ inputs.dry_run != true }}
           provenance: true
           build-args: |
             VERSION=${{ steps.ver.outputs.full }}
@@ -120,11 +147,88 @@ jobs:
             ${{ env.IMAGE }}:${{ steps.ver.outputs.full }}
             ${{ env.IMAGE }}:${{ steps.ver.outputs.major }}
 
+      # The AWS program: the same source built for Linux x86-64, the file named
+      # `bootstrap` inside the zip (what terraform/backend-aws/setup.sh unzips).
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - id: zip
+        env:
+          VERSION: ${{ steps.ver.outputs.full }}
+        run: |
+          mkdir -p dist
+          (cd backend && GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath \
+            -ldflags="-s -w -X main.version=${VERSION} -X main.repo=${GITHUB_REPOSITORY}" \
+            -o ../dist/bootstrap .)
+          (cd dist && zip -q -X bootstrap-linux-amd64.zip bootstrap)
+          sha="$(sha256sum dist/bootstrap-linux-amd64.zip | cut -d' ' -f1)"
+          echo "sha256=$sha" >> "$GITHUB_OUTPUT"
+          echo "bootstrap-linux-amd64.zip  sha256 $sha"
+
       # After the push, so a failed build never leaves a tag that announces an
       # image that does not exist.
-      - if: steps.ver.outputs.tag_needed == 'true'
+      - if: steps.ver.outputs.tag_needed == 'true' && inputs.dry_run != true
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git tag "backend-v${{ steps.ver.outputs.full }}"
           git push origin "backend-v${{ steps.ver.outputs.full }}"
+
+      - id: release
+        if: inputs.dry_run != true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.ver.outputs.full }}
+        run: |
+          gh release create "backend-v${VERSION}" dist/bootstrap-linux-amd64.zip \
+            --verify-tag --title "Backend ${VERSION}" \
+            --notes "Container image: ${IMAGE}:${VERSION}. The zip is the AWS program (see terraform/backend-aws/setup.sh); setup.sh checks it against the SHA-256 kept in terraform/backend-aws/program.env, not against anything published here."
+          echo "done=true" >> "$GITHUB_OUTPUT"
+
+  # Moves the repository's pointers to this release, in a pull request that a
+  # person merges. Separate, so a failure here (for example the repository
+  # setting that lets Actions create pull requests being off) leaves the
+  # release itself intact: the pull request can then be made by re-running this
+  # job.
+  pointers:
+    needs: publish
+    if: needs.publish.outputs.published == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write # pushes the branch
+      pull-requests: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      VERSION: ${{ needs.publish.outputs.version }}
+      SHA256: ${{ needs.publish.outputs.zip_sha256 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+      - name: Point backend_image and program.env at this release
+        run: |
+          branch="release/backend-v${VERSION}"
+          url="https://github.com/${GITHUB_REPOSITORY}/releases/download/backend-v${VERSION}/bootstrap-linux-amd64.zip"
+          image="${IMAGE}:${VERSION}"
+
+          sed -i -E "s|^(backend_image[[:space:]]*=[[:space:]]*\")[^\"]*(\")|\1${image}\2|" terraform/backend/publisher.auto.tfvars
+          grep -q "\"${image}\"" terraform/backend/publisher.auto.tfvars || { echo "backend_image was not updated"; exit 1; }
+
+          env_file=terraform/backend-aws/program.env
+          if [ -f "$env_file" ]; then
+            # Drop the lines set by an earlier release (the commented examples stay).
+            sed -i -E '/^SHAREPI_BACKEND_(URL|SHA256)=/d' "$env_file"
+            printf 'SHAREPI_BACKEND_URL="%s"\nSHAREPI_BACKEND_SHA256="%s"\n' "$url" "$SHA256" >> "$env_file"
+          fi
+
+          if git diff --quiet; then echo "Already pointing at this release."; exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git commit -q -am "Point at backend ${VERSION}" \
+            -m "Image ${image}; AWS program ${url} (sha256 ${SHA256})."
+          git push -q origin "$branch"
+          gh pr create --base "${{ github.event.repository.default_branch }}" --head "$branch" \
+            --title "Point at backend ${VERSION}" \
+            --body "Opened by the release workflow. Merging this is what makes owners get ${VERSION}: setup.sh clones the default branch."
