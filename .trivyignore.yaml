@@ -1,0 +1,19 @@
+# Findings accepted on purpose, each limited to the file it applies to, with the
+# reason. Anything else Trivy reports as HIGH or CRITICAL fails the build.
+misconfigurations:
+  - id: AWS-0132
+    paths:
+      - terraform/backend-aws/main.tf
+    statement: >
+      The photo bucket is encrypted with S3-managed keys (SSE-S3, AES256) on
+      purpose. A customer managed KMS key costs the owner a monthly fee and a
+      request charge, and the design goal is the lowest running cost for a
+      private photo bucket whose access control is the backend, not the key.
+  - id: DS-0002
+    paths:
+      - docker/web.Dockerfile
+    statement: >
+      The optional Web image is nginx:alpine run as root inside Cloud Run's
+      sandbox, and it writes config.json at start into the served directory.
+      Moving to an unprivileged nginx image changes paths and the start-up
+      templating and has not been tested; tracked in docs/TODO.md.
