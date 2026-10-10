@@ -75,15 +75,24 @@ Terraform が自動で読む)。アプリの「サーバー環境セットアッ
   | `na` | 北米 | us-central1 (アイオワ) |
   | `sa` | 南米 | southamerica-east1 (サンパウロ) |
 
+- **画面の言語**を選ぶ(第3引数、省略可)。`setup.sh` の画面は `ja` `en` `es` `fr` `de` `pt` `ko` の7言語。
+  アプリのガイドでは、プロジェクトIDの前に言語を選ぶ(アプリの言語が初期値)。省略すると環境変数 `SHAREPI_LANG`、
+  なければシェルの `LANG`、それもなければ英語になる。
+
 ```bash
 cd "$(mktemp -d)" && \
 git clone --depth 1 https://github.com/studio10dots/shared-sharepi.git && \
 cd shared-sharepi/terraform/backend && \
-bash setup.sh <プロジェクトID> eu   # euの部分を選んだコードに置き換える
+bash setup.sh <プロジェクトID> eu ja   # eu は地域のコード、ja は画面の言語に置き換える
 ```
 
-`setup.sh` が、Terraform の状態(state)用の小さなバケット `<プロジェクトID>-tfstate` を(なければ)作り、
-そこに state を置く設定にして、`terraform apply` を実行する。
+`setup.sh` は、次の8ステップを1行ずつ表示して進む(詳しい出力は画面に出さず、ログファイルに書く)。
+プロジェクトと課金の確認 → Terraform の用意(Cloud Shell に無ければ、固定バージョンを自動で取得) → 必要な API の有効化 →
+Terraform の状態(state)用の小さなバケット `<プロジェクトID>-tfstate` の作成(なければ)→ 管理者の ID の取得 →
+`terraform init` → `terraform apply` → 結果の取得。
+
+失敗したときは、原因の種類(課金が無効・権限・クォータ・ネットワークなど)ごとに「次にすること」を表示し、ログファイルの場所も示す。
+**最後の行は、成功したときも「すでにバックエンドが起動済み」のときも、バックエンドの URL**。これをアプリに登録する。
 
 **初回の作成も、あとからの更新も、このコマンドは同じ**です。毎回、新しい作業フォルダにリポジトリを取得するので、
 最新のバックエンドのバージョンが自動で入る。**地域のコードは、初回と同じものを使う**(変えると別のリージョンに作り直される)。
