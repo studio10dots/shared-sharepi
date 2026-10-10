@@ -142,11 +142,17 @@ func (m *memStore) Delete(_ context.Context, n string) error {
 	return nil
 }
 
+// ListDeleted lists the objects that are deleted now: one that was restored
+// (or written again) is live and no longer in the trash, but its deleted
+// generation stays readable and can be restored again once it is deleted.
 func (m *memStore) ListDeleted(_ context.Context, prefix string) ([]DeletedObject, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	var out []DeletedObject
 	for _, d := range m.deleted {
+		if _, live := m.objs[d.name]; live {
+			continue
+		}
 		if strings.HasPrefix(d.name, prefix) {
 			out = append(out, DeletedObject{Name: d.name, Version: ver(d.obj.gen), DeletedAt: d.at})
 		}
@@ -157,15 +163,15 @@ func (m *memStore) ListDeleted(_ context.Context, prefix string) ([]DeletedObjec
 func (m *memStore) Restore(_ context.Context, n string, version Version) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	for i, d := range m.deleted {
+	for _, d := range m.deleted {
 		if d.name == n && ver(d.obj.gen) == version {
 			if _, live := m.objs[n]; live {
 				return ErrPrecondition
 			}
+			// The restored object is a copy: the deleted generation stays as it
+			// was, so it is still found by the generation the trash listed.
 			m.next++
-			d.obj.gen = m.next
-			m.objs[n] = d.obj
-			m.deleted = append(m.deleted[:i], m.deleted[i+1:]...)
+			m.objs[n] = &memObj{data: d.obj.data, gen: m.next, meta: d.obj.meta, updated: d.obj.updated}
 			return nil
 		}
 	}

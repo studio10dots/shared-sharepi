@@ -20,7 +20,7 @@ work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
 # A JWT whose payload carries a user id, which is what the gcloud stand-in prints.
-payload="$(printf '%s' '{"sub":"110571000531995686849","email":"a@b.c"}' | base64 | tr -d '\n=' | tr '+/' '-_')"
+payload="$(printf '%s' '{"sub":"100000000000000000001","email":"a@b.c"}' | base64 | tr -d '\n=' | tr '+/' '-_')"
 fake_jwt="eyJhbGciOiJSUzI1NiJ9.${payload}.c2ln"
 
 # --- stand-ins, steered by FAKE_* variables
@@ -114,7 +114,7 @@ contains "success: names the log" "$out" "$log"
 lacks "success: no command output on the screen" "$out" 'Terraform has been successfully initialized'
 lacks "success: no resource lines on the screen" "$out" 'Creating...'
 contains "success: command output is in the log" "$(cat "$log")" 'Terraform has been successfully initialized'
-contains "success: the user id was passed on" "$calls" 'admin_subs=["110571000531995686849"]'
+contains "success: the user id was passed on" "$calls" 'admin_subs=["100000000000000000001"]'
 
 # ---------------------------------------------------------------- what the run did to the backend
 run_setup unchanged FAKE_APPLY=nochange
@@ -138,8 +138,60 @@ contains "ja: the billing commands are unchanged" "$out" 'gcloud billing project
 run_setup ja_from_env LANG=ja_JP.UTF-8
 contains "ja: chosen from the shell's language" "$out" '[1/8] プロジェクトを確認しています'
 # A language with no translation is English.
-FAKE_LANG_ARG_VALUE=fr run_setup fr
-contains "other languages: English" "$out" '[1/8] Checking your project'
+FAKE_LANG_ARG_VALUE=it run_setup it
+contains "a language with no translation: English" "$out" '[1/8] Checking your project'
+run_setup regional LANG=pt_BR.UTF-8
+contains "a regional shell language picks its language (pt_BR -> Portuguese)" "$out" '[1/8] Verificando seu projeto'
+
+# ---------------------------------------------------------------- every language
+# Each language runs the whole of setup.sh (the first step, a billing failure and the
+# final lines) and keeps the owner's commands and the URL exactly as they are.
+source "$here/setup_ui.sh"
+SP_PROJECT=hoge-vfltdc
+SP_REGION=asia-northeast1
+for lang in es fr de pt ko; do
+  SP_LANG=$lang
+  first_step="$(ui_t step_project)"
+  ok_word="$(ui_t ok)"
+  FAKE_LANG_ARG_VALUE=$lang run_setup "all_$lang" FAKE_APPLY=nochange
+  contains "$lang: the first step is in $lang" "$out" "[1/8] $first_step ... $ok_word"
+  lacks "$lang: the first step is not English" "$out" '[1/8] Checking your project'
+  contains "$lang: an existing backend is called running" "$out" "$(ui_t final_unchanged)"
+  [ "$(grep -v '^[[:space:]]*$' <<< "$out" | tail -n 1)" = "$url" ] && ok "$lang: the URL is the last line" || bad "$lang: the last line is not the URL"
+  FAKE_LANG_ARG_VALUE=$lang run_setup "billing_$lang" FAKE_BILLING=False
+  contains "$lang: the billing commands are unchanged" "$out" 'gcloud billing projects link hoge-vfltdc --billing-account=<ACCOUNT_ID>'
+  contains "$lang: the billing link is unchanged" "$out" 'https://console.cloud.google.com/billing/linkedaccount?project=hoge-vfltdc'
+  lacks "$lang: the billing explanation is not English" "$out" 'has no billing account linked'
+done
+
+# The catalogues: every language has every key and every kind of failure, with the same
+# placeholders and line breaks as the English, and the same commands and URLs.
+keys="$(awk '/^ui_fmt_en\(\)/,/^}/' "$here/setup_msg_en.sh" | grep -oE '^    [a-z_]+\)' | tr -d ' )')"
+kinds="billing protected terraform not_ready quota bucket_taken no_project permission network unknown"
+count() { grep -oF -- "$1" <<< "$2" | wc -l | tr -d ' '; }
+commands() { grep -E '^[[:space:]]+gcloud ' <<< "$1" | sed 's/^[[:space:]]*//' | sort; }
+urls() { grep -oE 'https://[A-Za-z0-9./?=_-]+' <<< "$1" | sort; }
+bad_catalogue=0
+for lang in $SP_LANGUAGES; do
+  for key in $keys; do
+    en="$(ui_fmt_en "$key")"
+    val="$("ui_fmt_$lang" "$key")"
+    if [ -z "$val" ]; then bad "$lang: the key $key is missing"; bad_catalogue=1; continue; fi
+    if [ "$(count '%s' "$en")" != "$(count '%s' "$val")" ]; then bad "$lang: $key has other placeholders than English"; bad_catalogue=1; fi
+    if [ "$(count '\n' "$en")" != "$(count '\n' "$val")" ]; then bad "$lang: $key has other line breaks than English"; bad_catalogue=1; fi
+  done
+  for kind in $kinds; do
+    SP_LANG=en
+    en_body="$(ui_body_en "$kind")"
+    SP_LANG=$lang
+    body="$("ui_body_$lang" "$kind")"
+    if [ -z "$body" ]; then bad "$lang: the explanation of $kind is missing"; bad_catalogue=1; continue; fi
+    if [ "$(commands "$en_body")" != "$(commands "$body")" ]; then bad "$lang: $kind has other commands than English"; bad_catalogue=1; fi
+    if [ "$(urls "$en_body")" != "$(urls "$body")" ]; then bad "$lang: $kind has other URLs than English"; bad_catalogue=1; fi
+  done
+done
+[ "$bad_catalogue" -eq 0 ] && ok "catalogues: all ${SP_LANGUAGES// /, } have every key and every kind, with the same placeholders, commands and URLs"
+SP_LANG=en
 
 # ---------------------------------------------------------------- billing not linked
 run_setup billing FAKE_BILLING=False

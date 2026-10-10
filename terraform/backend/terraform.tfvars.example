@@ -4,7 +4,7 @@
 
 # bucket_name   = "globally-unique-name"          # default: <project_id>-photos
 # admin_emails  = ["someone@gmail.com"]           # default: the account running terraform
-# admin_subs    = ["110571000531995686849"]       # Google user ids; when set they replace admin_emails.
+# admin_subs    = ["100000000000000000001"]       # Google user ids; when set they replace admin_emails.
 #                                                 # setup.sh fills in the id of the account running it.
 #                                                 # Find yours: gcloud auth print-identity-token, then read its "sub".
 # max_instances = 3

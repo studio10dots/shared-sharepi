@@ -26,13 +26,26 @@ variable "backend_image" {
   }
 }
 
-variable "google_client_id" {
-  description = "The app publisher's Web OAuth client ID. Public; the backend only accepts ID tokens issued for it (publisher.auto.tfvars)."
+variable "environment" {
+  description = "Which of the app's environments this backend serves: dev or prod. It picks config/<environment>.json, the one place the Web OAuth client ID is kept."
   type        = string
+  default     = "prod"
 
   validation {
-    condition     = !startswith(var.google_client_id, "REPLACE_WITH")
-    error_message = "google_client_id is not set in publisher.auto.tfvars yet: the app's publisher has to fill it in."
+    condition     = contains(["dev", "prod"], var.environment)
+    error_message = "environment must be \"dev\" or \"prod\"."
+  }
+}
+
+variable "google_client_id" {
+  description = "Overrides the Web OAuth client ID that is otherwise read from config/<environment>.json. Leave it unset: the file is the single source, so the backend always accepts the same client the app signs in with."
+  type        = string
+  default     = null
+
+  validation {
+    # try(): `||` does not short-circuit, and startswith(null, ...) is an error.
+    condition     = !try(startswith(var.google_client_id, "REPLACE_WITH"), false)
+    error_message = "google_client_id must be a real Web client ID (or unset, to use config/<environment>.json)."
   }
 }
 
@@ -50,7 +63,7 @@ variable "admin_emails" {
 
 variable "admin_subs" {
   description = <<-EOT
-    Google user ids (the `sub` of the account's ID token, e.g. "110571000531995686849")
+    Google user ids (the `sub` of the account's ID token, e.g. "100000000000000000001")
     of the administrators. When set, the backend decides who is an administrator by
     these ids alone and ignores admin_emails: an email address can change hands,
     a user id never does. setup.sh fills in the id of the account running it.
