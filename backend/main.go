@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -12,6 +13,8 @@ import (
 	"time"
 
 	"cloud.google.com/go/storage"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"google.golang.org/api/idtoken"
 )
 
@@ -30,14 +33,38 @@ func (v googleVerifier) Verify(ctx context.Context, token string) (Identity, err
 	return Identity{Sub: p.Subject, Email: email, EmailVerified: verified, Nonce: nonce}, nil
 }
 
+// newStorage builds the bucket and the URL signer for the cloud this instance
+// runs on: STORAGE_PROVIDER is "gcs" (the default; Cloud Run) or "s3" (AWS,
+// terraform/backend-aws). The container is the same image for both.
+func newStorage(ctx context.Context, bucket string) (Store, Signer, error) {
+	switch p := os.Getenv("STORAGE_PROVIDER"); p {
+	case "", "gcs":
+		gc, err := storage.NewClient(ctx)
+		if err != nil {
+			return nil, nil, err
+		}
+		b := gc.Bucket(bucket)
+		return gcsStore{b}, gcsSigner{b: b, accessID: mustEnv("SIGNER_SERVICE_ACCOUNT")}, nil
+	case "s3":
+		// Region and credentials come from the environment (Lambda sets both).
+		ac, err := awsconfig.LoadDefaultConfig(ctx)
+		if err != nil {
+			return nil, nil, err
+		}
+		c := s3.NewFromConfig(ac)
+		return s3Store{c: c, bucket: bucket}, s3Signer{p: s3.NewPresignClient(c), bucket: bucket}, nil
+	default:
+		return nil, nil, fmt.Errorf("STORAGE_PROVIDER must be gcs or s3, not %q", p)
+	}
+}
+
 func main() {
 	bucket := mustEnv("BUCKET")
 	ctx := context.Background()
-	gc, err := storage.NewClient(ctx)
+	store, signer, err := newStorage(ctx, bucket)
 	if err != nil {
 		log.Fatal(err)
 	}
-	b := gc.Bucket(bucket)
 
 	cfg := Config{
 		AdminSubs:        parseList(os.Getenv("ADMIN_SUBS"), false),
@@ -59,7 +86,7 @@ func main() {
 		WebOrigin: strings.TrimRight(os.Getenv("WEB_ORIGIN"), "/"),
 	}
 	log.Print(adminModeLog(cfg))
-	srv := NewServer(cfg, googleVerifier{audience: mustEnv("GOOGLE_CLIENT_ID")}, gcsStore{b}, gcsSigner{b: b, accessID: mustEnv("SIGNER_SERVICE_ACCOUNT")})
+	srv := NewServer(cfg, googleVerifier{audience: mustEnv("GOOGLE_CLIENT_ID")}, store, signer)
 	srv.checkForUpdateAsync(http.DefaultClient)
 
 	port := os.Getenv("PORT")
