@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -65,7 +66,13 @@ func main() {
 	if port == "" {
 		port = "8080"
 	}
-	log.Printf("listening on :%s", port)
+	// The value comes from the environment: only a port number is accepted, so
+	// nothing else can reach the log.
+	portNumber, err := strconv.Atoi(port)
+	if err != nil || portNumber < 1 || portNumber > 65535 {
+		log.Fatal("PORT must be a port number")
+	}
+	log.Printf("listening on :%d", portNumber)
 	// Photo bytes never pass through here, so every request is small and quick:
 	// timeouts stop slow-client (slowloris) connections from holding instances.
 	hs := &http.Server{

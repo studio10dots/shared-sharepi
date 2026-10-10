@@ -109,9 +109,12 @@ func (s *Server) trashThumbnail(w http.ResponseWriter, r *http.Request, id Ident
 		return
 	}
 	w.Header().Set("Content-Type", "image/jpeg")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Cache-Control", "private, max-age=3600")
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(b)
+	// Image bytes with a fixed image type and nosniff, never HTML: a browser will
+	// not run them (gosec G705 cannot see that).
+	_, _ = w.Write(b) // #nosec G705
 }
 
 func isEventFile(g, p string) bool {
