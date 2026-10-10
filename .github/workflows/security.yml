@@ -30,7 +30,9 @@ jobs:
           go-version-file: backend/go.mod
           cache-dependency-path: backend/go.sum
       - run: go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
-      - run: go run github.com/securego/gosec/v2/cmd/gosec@v2.29.0 ./...
+      # Built against a newer x/tools: the released gosec cannot read Go 1.27.2's
+      # export data and would silently check nothing (see the script).
+      - run: bash ../tools/run_gosec.sh .
 
   # Keys and tokens in the files and in the whole history.
   secrets:
@@ -62,6 +64,7 @@ jobs:
         with:
           scan-type: fs
           scanners: vuln,misconfig
+          trivyignores: .trivyignore.yaml
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           exit-code: "1"
