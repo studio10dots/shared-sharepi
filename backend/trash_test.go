@@ -65,8 +65,13 @@ func TestRestoreBringsAnItemBack(t *testing.T) {
 	if len(e.trash(t, "alice")) != 0 {
 		t.Error("restored objects are still in the trash")
 	}
-	// The generations are gone from the trash now, so a repeat is a 404, not a crash.
-	want(t, e.do("POST", "/v1/groups/"+group+"/trash/restore", "alice", string(body)), 404)
+	// The items are live again, so a repeat finds them already there: nothing to
+	// restore, which is not an error (a past-retention version is the 404 case).
+	w = e.do("POST", "/v1/groups/"+group+"/trash/restore", "alice", string(body))
+	want(t, w, 200)
+	if n := decodeBody[map[string]int](t, w)["restored"]; n != 0 {
+		t.Errorf("a repeated restore restored %d", n)
+	}
 }
 
 type orderStore struct {

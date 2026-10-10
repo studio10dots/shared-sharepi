@@ -1,0 +1,12 @@
+backend_image    = "REPLACE_WITH_ECR_IMAGE_URI" # e.g. 111122223333.dkr.ecr.ap-northeast-1.amazonaws.com/chamagon-backend:1
+google_client_id = "REPLACE_WITH_PUBLISHERS_WEB_CLIENT_ID.apps.googleusercontent.com"
+admin_emails     = ["someone@gmail.com"] # required: unlike the GCP module, this cannot default to "whoever ran terraform"
+
+# Optional:
+# region        = "ap-northeast-1"   # or pass -var="region=$(region_for <code>)" (see region.sh, docs/SETUP.md)
+# bucket_name   = "globally-unique-name"          # default: chamagon-photos-<AWS account id>
+# max_concurrency = 3
+# memory_size     = 128
+# timeout_seconds = 30
+# soft_delete_retention_days = 30
+# log_retention_days         = 30                       # request logs (with IP addresses); 1-3653, default 30

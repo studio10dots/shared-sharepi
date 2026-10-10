@@ -23,25 +23,25 @@ jwt() {
   printf 'eyJhbGciOiJSUzI1NiJ9.%s.c2ln' "$body"
 }
 
-check "plain payload" "110571000531995686849" \
-  "$(sub_from_jwt "$(jwt '{"sub":"110571000531995686849","email":"a@b.c"}')")"
+check "plain payload" "100000000000000000001" \
+  "$(sub_from_jwt "$(jwt '{"sub":"100000000000000000001","email":"a@b.c"}')")"
 
 # Payload lengths that need 0, 1, 2 and 3 characters of padding.
 for pad in "" "x" "xx" "xxx"; do
-  check "padding variant [$pad]" "109538459286029168202" \
-    "$(sub_from_jwt "$(jwt "{\"sub\":\"109538459286029168202\",\"n\":\"$pad\"}")")"
+  check "padding variant [$pad]" "100000000000000000002" \
+    "$(sub_from_jwt "$(jwt "{\"sub\":\"100000000000000000002\",\"n\":\"$pad\"}")")"
 done
 
-check "pretty-printed json" "110571000531995686849" \
-  "$(sub_from_jwt "$(jwt '{ "sub" : "110571000531995686849" }')")"
+check "pretty-printed json" "100000000000000000001" \
+  "$(sub_from_jwt "$(jwt '{ "sub" : "100000000000000000001" }')")"
 
 check "no sub claim" "" "$(sub_from_jwt "$(jwt '{"email":"a@b.c"}')")"
 check "a sub that is not numeric is refused" "" \
   "$(sub_from_jwt "$(jwt '{"sub":"abc"}')")"
 check "garbage" "" "$(sub_from_jwt "not-a-token" || true)"
 
-check "tokeninfo answer" "110571000531995686849" \
-  "$(printf '{\n  "sub": "110571000531995686849",\n  "email": "a@b.c"\n}\n' | sub_from_tokeninfo)"
+check "tokeninfo answer" "100000000000000000001" \
+  "$(printf '{\n  "sub": "100000000000000000001",\n  "email": "a@b.c"\n}\n' | sub_from_tokeninfo)"
 check "tokeninfo without sub" "" \
   "$(printf '{"email": "a@b.c"}' | sub_from_tokeninfo)"
 

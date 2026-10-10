@@ -205,3 +205,80 @@ gcloud services enable serviceusage.googleapis.com cloudresourcemanager.googleap
 
 **確認状況**: 確認済み(2026-10。Cloud Shell で再現し、修正後のコマンドで、最後まで実行できることも確認)。
 自動のやり直しが、実際に働いたかどうかは、確認していません(再試行の仕組みは、テスト用の偽の応答で確認済み)。
+
+---
+
+# AWS 版(terraform/backend-aws)
+
+AWS CloudShell で `setup.sh` を実行したときの項目です。Google Cloud 版と違う点は、プロジェクトの代わりに「AWS アカウント」、
+`gcloud` の代わりに `aws` を使うことと、オーナー(管理者になる Google アカウント)を、必ず指定することです。
+
+## 13. 「explicit deny in a service control policy」というエラーが出た(AWS)
+
+**エラー原文**
+
+```
+is not authorized to perform: s3:CreateBucket on resource: "arn:aws:s3:::..." with an explicit deny in a service control policy: arn:aws:organizations::...
+```
+
+**原因**: 組織(AWS Organizations)のサービスコントロールポリシー(SCP)が、その操作を禁止しています。SCP はアカウントより
+上で決められたルールで、アカウントの中の権限では解除できません。
+
+AWS の「簡易サインアップ」(Google などでサインアップして「プロジェクト」を作る方式)で作ったアカウントは、AWS 管理の SCP が付き、
+**最初に決まった 1 つのリージョンしか使えません**。リージョンは、連絡先住所の国から自動で決まります(日本は `ap-southeast-2`
+のシドニー)。ほかのリージョンへの操作は、このエラーで拒否されます。
+
+**対処**
+
+1. https://settings.aws.com →「プロジェクト」→「追加情報」で、アカウントのリージョンを確認し、そのリージョンに合う地域コードで実行する。
+2. 別のリージョンを使いたい場合は、**「Sign up for AWS (advanced)」で作った通常のアカウント**を使う(別のメールアドレスが要ります。
+   `name+aws@example.com` のような「+」付きのアドレスが使える場合があります)。
+3. 簡易サインアップのアカウントで「高度な機能のアクティブ化」をすると、制限は外れますが、**元に戻せず、支出の上限もなくなります**。
+
+**確認状況**: 確認済み(2026-10。簡易サインアップのアカウントで、東京へのバケット・ロググループ・ECR の作成が拒否され、シドニーでは
+通ることを確認。AWS の公式ドキュメントにも同じ仕様の記載がある)。ただし、SCP の中身(すべての条件)は確認していません。たとえば、
+前のアカウントで `us-east-1` のログだけが通った理由は、説明できていません。
+
+## 14. Lambda の関数 URL が、すべて「403 Forbidden」を返す(AWS)
+
+**症状**: `backend_url` に `/ping` を付けて開くと、AWS 自身が `403` と
+`{"Message":"Forbidden. For troubleshooting Function URL authorization issues, see: ..."}` を返す。アプリに URL を登録すると
+「この URL はバックエンドではないようです」と出る。
+
+**原因**: 関数 URL の認証タイプが `NONE` でも、関数の「リソースベースポリシー」が公開を許可していないと、AWS が 403 を返します。
+コンソールで作ると自動で付きますが、Terraform・CLI・API で作ると付きません。2025 年 10 月以降の新しい関数 URL は、
+`lambda:InvokeFunctionUrl` と `lambda:InvokeFunction` の両方の許可が必要です。
+
+**対処**: 現在の Terraform は、この 2 つの許可を作るので、最新のリポジトリで `setup.sh` を実行し直せば解消します。手作業で
+`aws lambda add-permission` を実行した場合は、同じ `statement-id` が衝突して `409 ResourceConflictException` になるので、先に消してください。
+
+```bash
+aws lambda remove-permission --region <リージョン> --function-name chamagon-backend --statement-id FunctionURLAllowPublicAccess
+aws lambda remove-permission --region <リージョン> --function-name chamagon-backend --statement-id FunctionURLInvokeAllowPublicAccess
+```
+
+**確認状況**: 確認済み(2026-10。実機で 403 を再現し、2 つの許可を足した後に、アプリから接続できることを確認)。
+
+## 15. 「no space left on device」というエラーが出た(AWS)
+
+**原因**: AWS CloudShell のホームは約 1 GB しかありません。Terraform の AWS プロバイダは、1 つで数百 MB あり、新しい版と古い版が
+並ぶと入りきりません。
+
+**対処**: `setup.sh` は、Terraform のダウンロード先を、広い `/tmp` に置き、前回の実行が残した `.terraform` を消します。それでも
+足りない場合は、ホームの大きなファイルを確認して、不要なものを消してください。
+
+```bash
+du -sm ~/* ~/.[!.]* | sort -rn | head
+```
+
+**確認状況**: 現象は確認済み(2026-10。実機で再現し、`TF_DATA_DIR=/tmp/...` にして解消)。`setup.sh` への組み込みは、偽のコマンドによる
+テストだけで、実機では**未確認**です。
+
+## 16. 「ReservedConcurrentExecutions ... below its minimum value」というエラーが出た(AWS)
+
+**原因**: 新しい AWS アカウントは、Lambda の同時実行数の上限が低く(10 程度)、一部を予約すると、予約しない枠が足りなくなります。
+
+**対処**: 現在の Terraform は、既定で予約をしません。上限を引き上げた後で、同時実行数を制限したい場合は、Service Quotas で上限を
+上げてから、`max_concurrency` を指定します。
+
+**確認状況**: 確認済み(2026-10。実機で再現し、予約を外して解消)。
