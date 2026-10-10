@@ -10,3 +10,6 @@ crash.log
 # Local tooling
 .claude/
 .DS_Store
+
+# Binaries built locally
+*.exe
