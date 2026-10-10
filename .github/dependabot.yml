@@ -1,18 +1,13 @@
-# Keeps the actions, the Go modules and the base images up to date.
-# Go and Docker updates change backend/, so merging one releases a new backend
-# (release-backend.yml watches backend/ and terraform/backend/); an action update
-# changes workflow files only and releases nothing.
+# Keeps the actions the workflows use up to date. Only workflow files change, so
+# these pull requests do not trigger a backend release (release-backend.yml
+# watches backend/ and terraform/backend/ only).
+#
+# The Go modules and the base image are NOT watched here: backend/ is published
+# from the maintainer's private repository, where Dependabot updates them, so a
+# change made only in this repository would be overwritten by the next publication.
 version: 2
 updates:
   - package-ecosystem: github-actions
     directory: /
-    schedule:
-      interval: weekly
-  - package-ecosystem: gomod
-    directory: /backend
-    schedule:
-      interval: weekly
-  - package-ecosystem: docker
-    directory: /backend
     schedule:
       interval: weekly
