@@ -6,6 +6,12 @@ data "google_project" "this" {
 
 locals {
   bucket_name = coalesce(var.bucket_name, "${var.project_id}-photos")
+  # The Web OAuth client ID has one home: config/<environment>.json at the
+  # repository root, the same file the app is built with (Agents.md section 8).
+  google_client_id = coalesce(
+    var.google_client_id,
+    jsondecode(file("${path.module}/../../config/${var.environment}.json")).GOOGLE_SIGN_IN_CLIENT_ID,
+  )
   # Whoever runs `terraform apply` holds the GCP contract, so they are the administrator.
   # The email is only needed when no user id is pinned (admin_subs). Cloud Shell's
   # credentials can carry no email at all (the lookup then answers null), and
@@ -138,7 +144,7 @@ resource "google_cloud_run_v2_service" "backend" {
       }
       env {
         name  = "GOOGLE_CLIENT_ID"
-        value = var.google_client_id
+        value = local.google_client_id
       }
       env {
         name  = "ADMIN_EMAILS"
