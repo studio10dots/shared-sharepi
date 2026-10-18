@@ -16,4 +16,5 @@ misconfigurations:
       The optional Web image is nginx:alpine run as root inside Cloud Run's
       sandbox, and it writes config.json at start into the served directory.
       Moving to an unprivileged nginx image changes paths and the start-up
-      templating and has not been tested; tracked in docs/TODO.md.
+      templating and has not been tested. The Web image is built in the
+      private repository, so this entry matches nothing in the public one.

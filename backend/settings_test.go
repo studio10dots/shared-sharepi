@@ -23,7 +23,7 @@ func TestSettingsDefaultToFiveMinutesAndAskingOverTwo(t *testing.T) {
 	// Anyone signed in can read the limits (a member of no group too: the app
 	// reads them before an upload, and they say nothing private).
 	got := getSettingsAs(t, e, "carol")
-	want := VideoSettings{MaxSeconds: 300, ConfirmSeconds: 120}
+	want := VideoSettings{MaxSeconds: 300, MaxBytes: 500 << 20, ConfirmSeconds: 240, ConfirmBytes: 400 << 20}
 	if got.Video != want {
 		t.Errorf("defaults = %+v, want %+v", got.Video, want)
 	}
@@ -109,6 +109,29 @@ func TestOwnersVideoSizeLimitIsSignedIntoTheUploadOfAnOriginalVideo(t *testing.T
 	}
 	if photo := upload("jpg"); photo[2].MaxSize != 1000 {
 		t.Errorf("a photo is not limited by the video setting: %+v", photo[2])
+	}
+}
+
+func TestABackendNeverConfiguredCapsAVideoAt500MB(t *testing.T) {
+	e := newEnv(t)
+	e.s.cfg.MaxUploadSize = 5 << 30 // the backend's own limit is far above it
+
+	body := `{"event_id":"bbq00001","photo_id":"` + pid + `","ext":"mp4","kinds":["original"]}`
+	want(t, e.do("POST", "/v1/groups/"+group+"/uploads", "alice", body), 200)
+
+	if got := e.sg.calls[0].MaxSize; got != 500<<20 {
+		t.Errorf("MaxSize = %d, want the default 500 MB", got)
+	}
+}
+
+func TestADefaultQuestionComesAtEightyPercentOfTheDefaultMaximum(t *testing.T) {
+	v := defaultSettings().Video
+
+	if v.ConfirmSeconds*100 != v.MaxSeconds*80 || v.ConfirmBytes*100 != v.MaxBytes*80 {
+		t.Errorf("defaults %+v: the question is not at 80%% of the maximum", v)
+	}
+	if msg := v.valid(5 << 30); msg != "" {
+		t.Errorf("the defaults cannot be saved back: %s", msg)
 	}
 }
 

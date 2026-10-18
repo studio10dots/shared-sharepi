@@ -308,7 +308,10 @@ ui_classify() {
     echo not_ready
   elif grep -qiE 'quota.*exceeded|RESOURCE_EXHAUSTED|failed to initialize in this region' <<< "$text"; then
     echo quota
-  elif grep -qiE 'bucket.*(already exists|already own|not available)|409.*bucket|The requested bucket name is not available' <<< "$text"; then
+  # "...succeeded and you already own it" is NOT here: it means the bucket is the
+  # owner's own (setup.sh takes it into the state and carries on), not that
+  # somebody else holds the name.
+  elif grep -qiE 'bucket.*(already exists|not available)|The requested bucket name is not available' <<< "$text"; then
     echo bucket_taken
   elif grep -qiE 'project.*(not found|does not exist)|may not exist|Could not find project|invalid project' <<< "$text"; then
     echo no_project
@@ -366,7 +369,10 @@ ui_fail() {
 # happened to the backend (created, already running, updated), and then the URL as
 # the very last line, alone, flush left, so that selecting that line copies the URL
 # and nothing else.
-#   ui_final <created|unchanged|updated> <backend url> <how the administrator is recognised>
+#   ui_final <created|unchanged|updated> <backend url> <how the administrator is recognised> [earlier buckets]
+# The earlier buckets (names, space-separated) are the ones this run copied under
+# new names: they are listed with the command that deletes them, to be used once
+# the owner has seen that everything works. They are never deleted here.
 ui_final() {
   echo
   ui_t final_admin "$3"
@@ -376,6 +382,17 @@ ui_final() {
   echo
   echo "$SP_LOG"
   echo
+  if [ -n "${4// /}" ]; then
+    local b
+    ui_t old_buckets
+    echo
+    for b in $4; do echo "  gs://$b"; done
+    echo
+    ui_t old_buckets_delete
+    echo
+    for b in $4; do echo "  gcloud storage rm --recursive gs://$b"; done
+    echo
+  fi
   ui_t "final_$1"
   echo
   echo

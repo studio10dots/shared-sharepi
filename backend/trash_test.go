@@ -29,7 +29,7 @@ func TestTrashListsOnlyDeletedMediaOfTheGroup(t *testing.T) {
 	}
 	want(t, e.do("DELETE", evPath("bbq00001")+"/items/"+pid, "alice", ""), 204)
 
-	got := e.trash(t, "alice")
+	got := e.trash(t, "admin")
 	if len(got) != 3 { // the photo's original, medium and thumbnail
 		t.Fatalf("trash = %+v", got)
 	}
@@ -53,8 +53,8 @@ func TestRestoreBringsAnItemBack(t *testing.T) {
 	if items() != 0 {
 		t.Fatal("item should be gone")
 	}
-	body, _ := json.Marshal(map[string]any{"objects": e.trash(t, "alice")})
-	w := e.do("POST", "/v1/groups/"+group+"/trash/restore", "alice", string(body))
+	body, _ := json.Marshal(map[string]any{"objects": e.trash(t, "admin")})
+	w := e.do("POST", "/v1/groups/"+group+"/trash/restore", "admin", string(body))
 	want(t, w, 200)
 	if n := decodeBody[map[string]int](t, w)["restored"]; n != 3 {
 		t.Errorf("restored = %d", n)
@@ -62,12 +62,12 @@ func TestRestoreBringsAnItemBack(t *testing.T) {
 	if items() != 1 {
 		t.Error("restored item is not listed again")
 	}
-	if len(e.trash(t, "alice")) != 0 {
+	if len(e.trash(t, "admin")) != 0 {
 		t.Error("restored objects are still in the trash")
 	}
 	// The items are live again, so a repeat finds them already there: nothing to
 	// restore, which is not an error (a past-retention version is the 404 case).
-	w = e.do("POST", "/v1/groups/"+group+"/trash/restore", "alice", string(body))
+	w = e.do("POST", "/v1/groups/"+group+"/trash/restore", "admin", string(body))
 	want(t, w, 200)
 	if n := decodeBody[map[string]int](t, w)["restored"]; n != 0 {
 		t.Errorf("a repeated restore restored %d", n)
@@ -88,7 +88,7 @@ func TestRestoreOriginalComesLast(t *testing.T) {
 	e := newEnv(t)
 	e.seedItem("bbq00001", pid, "jpg", "u-alice", testNow)
 	want(t, e.do("DELETE", evPath("bbq00001")+"/items/"+pid, "alice", ""), 204)
-	objs := e.trash(t, "alice")
+	objs := e.trash(t, "admin")
 	for i, o := range objs { // hand them over with the original first
 		if strings.Contains(o.Path, "/original/") {
 			objs[0], objs[i] = objs[i], objs[0]
@@ -97,7 +97,7 @@ func TestRestoreOriginalComesLast(t *testing.T) {
 	rec := &orderStore{memStore: e.st}
 	e.s.store = rec
 	body, _ := json.Marshal(map[string]any{"objects": objs})
-	want(t, e.do("POST", "/v1/groups/"+group+"/trash/restore", "alice", string(body)), 200)
+	want(t, e.do("POST", "/v1/groups/"+group+"/trash/restore", "admin", string(body)), 200)
 	if len(rec.order) != 3 || !strings.Contains(rec.order[2], "/original/") {
 		t.Errorf("restore order = %v", rec.order)
 	}
@@ -114,7 +114,7 @@ func TestRestoreRejectsAnythingOutsideTheGroupsMedia(t *testing.T) {
 		"traversal":     group + "/../x/thumbnail/" + pid + ".jpg",
 	} {
 		body := fmt.Sprintf(`{"objects":[{"path":%q,"generation":"5"}]}`, obj)
-		if w := e.do("POST", "/v1/groups/"+group+"/trash/restore", "alice", body); w.Code != 422 {
+		if w := e.do("POST", "/v1/groups/"+group+"/trash/restore", "admin", body); w.Code != 422 {
 			t.Errorf("%s: got %d, want 422", name, w.Code)
 		}
 	}
@@ -122,7 +122,7 @@ func TestRestoreRejectsAnythingOutsideTheGroupsMedia(t *testing.T) {
 		"no generation": fmt.Sprintf(`{"objects":[{"path":%q,"generation":""}]}`, good),
 		"empty":         `{"objects":[]}`,
 	} {
-		if w := e.do("POST", "/v1/groups/"+group+"/trash/restore", "alice", body); w.Code != 422 {
+		if w := e.do("POST", "/v1/groups/"+group+"/trash/restore", "admin", body); w.Code != 422 {
 			t.Errorf("%s: got %d, want 422", name, w.Code)
 		}
 	}
@@ -132,7 +132,7 @@ func TestRestoreRejectsAnythingOutsideTheGroupsMedia(t *testing.T) {
 		"unknown generation": fmt.Sprintf(`{"objects":[{"path":%q,"generation":"x"}]}`, good),
 		"zero":               fmt.Sprintf(`{"objects":[{"path":%q,"generation":"0"}]}`, good),
 	} {
-		if w := e.do("POST", "/v1/groups/"+group+"/trash/restore", "alice", body); w.Code != 404 {
+		if w := e.do("POST", "/v1/groups/"+group+"/trash/restore", "admin", body); w.Code != 404 {
 			t.Errorf("%s: got %d, want 404", name, w.Code)
 		}
 	}
@@ -146,7 +146,7 @@ func TestTrashNamesTheEventAndServesTheThumbnail(t *testing.T) {
 	_, _ = e.st.Write(ctx, eventFilePath(group, "bbq00001"), []byte(`{"name":"BBQ","date":"2026/05/01"}`), nil)
 	want(t, e.do("DELETE", evPath("bbq00001")+"/items/"+pid, "alice", ""), 204)
 
-	w := e.do("GET", "/v1/groups/"+group+"/trash", "alice", "")
+	w := e.do("GET", "/v1/groups/"+group+"/trash", "admin", "")
 	want(t, w, 200)
 	got := decodeBody[struct {
 		Objects []trashObject
@@ -158,7 +158,7 @@ func TestTrashNamesTheEventAndServesTheThumbnail(t *testing.T) {
 
 	// Delete the whole event: the name still comes back, with the file to restore.
 	_ = e.st.Delete(ctx, eventFilePath(group, "bbq00001"))
-	w = e.do("GET", "/v1/groups/"+group+"/trash", "alice", "")
+	w = e.do("GET", "/v1/groups/"+group+"/trash", "admin", "")
 	got = decodeBody[struct {
 		Objects []trashObject
 		Events  []trashEvent
@@ -167,16 +167,16 @@ func TestTrashNamesTheEventAndServesTheThumbnail(t *testing.T) {
 		t.Fatalf("deleted event: %+v", got.Events)
 	}
 	body, _ := json.Marshal(map[string]any{"objects": []trashObject{*got.Events[0].Restore}})
-	want(t, e.do("POST", "/v1/groups/"+group+"/trash/restore", "alice", string(body)), 200)
+	want(t, e.do("POST", "/v1/groups/"+group+"/trash/restore", "admin", string(body)), 200)
 	if !e.st.has(eventFilePath(group, "bbq00001")) {
 		t.Error("event.json was not restored")
 	}
 
 	for _, o := range got.Objects {
 		if strings.Contains(o.Path, "/thumbnail/") {
-			w = e.do("GET", "/v1/groups/"+group+"/trash/thumbnail?path="+o.Path+"&generation="+o.Generation, "alice", "")
+			w = e.do("GET", "/v1/groups/"+group+"/trash/thumbnail?path="+o.Path+"&generation="+o.Generation, "admin", "")
 			want(t, w, 200)
 		}
 	}
-	want(t, e.do("GET", "/v1/groups/"+group+"/trash/thumbnail?path="+group+"/bbq00001/original/"+pid+".jpg&generation=1", "alice", ""), 422)
+	want(t, e.do("GET", "/v1/groups/"+group+"/trash/thumbnail?path="+group+"/bbq00001/original/"+pid+".jpg&generation=1", "admin", ""), 422)
 }

@@ -37,7 +37,11 @@ type trashObject struct {
 	DeletedAt  string `json:"deleted_at,omitempty"`
 }
 
-func (s *Server) listTrash(w http.ResponseWriter, r *http.Request, id Identity, g string, _ Member) {
+func (s *Server) listTrash(w http.ResponseWriter, r *http.Request, id Identity, g string, _ Roster, _ *Member) {
+	if !s.isAdmin(id) {
+		writeErr(w, http.StatusForbidden, "administrator only")
+		return
+	}
 	deleted, err := s.store.ListDeleted(r.Context(), g+"/")
 	if err != nil {
 		writeErr(w, http.StatusBadGateway, "storage error")
@@ -92,7 +96,11 @@ func (s *Server) listTrash(w http.ResponseWriter, r *http.Request, id Identity, 
 // trashThumbnail returns the bytes of one deleted item's thumbnail (a 100 px
 // JPEG, a few KB): a soft-deleted object cannot be served through a signed
 // URL, so this is the one place photo bytes pass through the backend.
-func (s *Server) trashThumbnail(w http.ResponseWriter, r *http.Request, id Identity, g string, _ Member) {
+func (s *Server) trashThumbnail(w http.ResponseWriter, r *http.Request, id Identity, g string, _ Roster, _ *Member) {
+	if !s.isAdmin(id) {
+		writeErr(w, http.StatusForbidden, "administrator only")
+		return
+	}
 	path := r.URL.Query().Get("path")
 	generation := r.URL.Query().Get("generation")
 	if generation == "" || !strings.HasPrefix(path, g+"/") || !mediaRe.MatchString(path) || !strings.Contains(path, "/thumbnail/") {
@@ -125,7 +133,11 @@ func isEventFile(g, p string) bool {
 // restoreTrash restores the given versions, derivatives first and the original
 // last, so an item only reappears in listings once its thumbnail is back (the
 // same order as an upload).
-func (s *Server) restoreTrash(w http.ResponseWriter, r *http.Request, id Identity, g string, _ Member) {
+func (s *Server) restoreTrash(w http.ResponseWriter, r *http.Request, id Identity, g string, _ Roster, _ *Member) {
+	if !s.isAdmin(id) {
+		writeErr(w, http.StatusForbidden, "administrator only")
+		return
+	}
 	var req struct {
 		Objects []trashObject `json:"objects"`
 	}

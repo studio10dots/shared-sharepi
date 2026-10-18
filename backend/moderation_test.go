@@ -365,8 +365,10 @@ func TestDeletingAReportedItemLeavesTheReportForTheAdministrator(t *testing.T) {
 	e := newEnv(t)
 	e.seedItem("bbq00001", pid, "jpg", "u-bob", testNow)
 	id := e.report(t, "alice", reportBody(itemTarget("bbq00001", pid), "inappropriate", ""), 201)
-	want(t, e.do("DELETE", evPath("bbq00001")+"/items/"+pid, "admin", ""), 404) // the administrator is not a member
-	want(t, e.do("DELETE", evPath("bbq00001")+"/items/"+pid, "alice", ""), 204)
+	// Only the uploader (bob) or the owner may delete it; alice reported it, she cannot.
+	want(t, e.do("DELETE", evPath("bbq00001")+"/items/"+pid, "alice", ""), 403)
+	// The administrator need not be a member of the group to do it.
+	want(t, e.do("DELETE", evPath("bbq00001")+"/items/"+pid, "admin", ""), 204)
 	if !e.st.has(group + "/reports/" + id + ".json") {
 		t.Error("deleting the item removed the evidence of the report")
 	}

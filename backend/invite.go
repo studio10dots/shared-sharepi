@@ -242,5 +242,7 @@ func (s *Server) redeem(w http.ResponseWriter, r *http.Request, id Identity) {
 		writeErr(w, http.StatusBadGateway, "storage error")
 		return
 	}
+	// They asked to be invited, and now they are: the request is dealt with.
+	s.forgetJoinRequest(r.Context(), p.G, id)
 	writeJSON(w, http.StatusOK, map[string]any{"group_id": p.G, "display_name": ro.DisplayName, "user_id": userID})
 }

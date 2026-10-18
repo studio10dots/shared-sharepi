@@ -35,6 +35,10 @@ type Identity struct {
 	// An app that binds its tokens to one backend (see tokenBinding) puts a value
 	// there that only that backend accepts.
 	Nonce string
+	// SessionStart is set when the caller came with a session token (session.go):
+	// when the Google sign-in at the head of its chain of renewals was proven.
+	// Zero for an ID token.
+	SessionStart time.Time
 }
 
 // Verifier checks a bearer ID token. It is an interface so tests need no Google.
@@ -94,6 +98,14 @@ type Config struct {
 	// backend. A token that carries a nonce for another backend is always refused,
 	// whatever this says: that is a token someone is replaying. See tokenBinding.
 	RequireTokenBinding bool
+
+	// SessionTTL is how long a session token (session.go) lives; zero means
+	// DefaultSessionTTL (a day).
+	SessionTTL time.Duration
+	// SessionMaxAge bounds a chain of renewals: no session outlives this long
+	// after the Google sign-in it started from. Zero means DefaultSessionMaxAge
+	// (a week).
+	SessionMaxAge time.Duration
 }
 
 type Server struct {
@@ -230,6 +242,7 @@ func NewServer(cfg Config, v Verifier, st Store, sg Signer) *Server {
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /ping", s.ping)
+	mux.HandleFunc("POST /v1/session", s.auth(s.createSession))
 	mux.HandleFunc("GET /v1/me", s.auth(s.me))
 	mux.HandleFunc("GET /v1/my/groups", s.auth(s.myGroups))
 	mux.HandleFunc("GET /v1/settings", s.auth(s.getSettings))
@@ -244,6 +257,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/groups/{g}/reports", s.auth(s.member(s.createReport)))
 	mux.HandleFunc("GET /v1/groups/{g}/reports", s.auth(s.admin(s.listReports)))
 	mux.HandleFunc("GET /v1/reports/open", s.auth(s.openReports))
+	mux.HandleFunc("POST /v1/groups/{g}/join-requests", s.auth(s.requestJoin))
+	mux.HandleFunc("GET /v1/groups/{g}/join-requests", s.auth(s.admin(s.listJoinRequests)))
+	mux.HandleFunc("DELETE /v1/groups/{g}/join-requests/{id}", s.auth(s.admin(s.deleteJoinRequest)))
+	mux.HandleFunc("GET /v1/join-requests/open", s.auth(s.openJoinRequests))
 	mux.HandleFunc("POST /v1/groups/{g}/reports/{report_id}/resolve", s.auth(s.admin(s.resolveReport)))
 	mux.HandleFunc("DELETE /v1/groups/{g}/members/{user_id}", s.auth(s.admin(s.removeMember)))
 	mux.HandleFunc("POST /v1/groups/{g}/stop-sharing", s.auth(s.admin(s.stopSharing)))
@@ -251,14 +268,14 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/groups/{g}/events", s.auth(s.member(s.listEvents)))
 	mux.HandleFunc("POST /v1/groups/{g}/events", s.auth(s.member(s.createEvent)))
 	mux.HandleFunc("PUT /v1/groups/{g}/events/{id}", s.auth(s.member(s.updateEvent)))
-	mux.HandleFunc("DELETE /v1/groups/{g}/events/{id}", s.auth(s.member(s.deleteEvent)))
+	mux.HandleFunc("DELETE /v1/groups/{g}/events/{id}", s.auth(s.viewer(s.deleteEvent)))
 	mux.HandleFunc("GET /v1/groups/{g}/events/{id}/items", s.auth(s.member(s.listItems)))
-	mux.HandleFunc("DELETE /v1/groups/{g}/events/{id}/items/{photo_id}", s.auth(s.member(s.deleteItem)))
+	mux.HandleFunc("DELETE /v1/groups/{g}/events/{id}/items/{photo_id}", s.auth(s.viewer(s.deleteItem)))
 	mux.HandleFunc("GET /v1/groups/{g}/favorites", s.auth(s.member(s.getFavorites)))
 	mux.HandleFunc("POST /v1/groups/{g}/favorites/ops", s.auth(s.member(s.postFavoriteOps)))
-	mux.HandleFunc("GET /v1/groups/{g}/trash", s.auth(s.member(s.listTrash)))
-	mux.HandleFunc("GET /v1/groups/{g}/trash/thumbnail", s.auth(s.member(s.trashThumbnail)))
-	mux.HandleFunc("POST /v1/groups/{g}/trash/restore", s.auth(s.member(s.restoreTrash)))
+	mux.HandleFunc("GET /v1/groups/{g}/trash", s.auth(s.viewer(s.listTrash)))
+	mux.HandleFunc("GET /v1/groups/{g}/trash/thumbnail", s.auth(s.viewer(s.trashThumbnail)))
+	mux.HandleFunc("POST /v1/groups/{g}/trash/restore", s.auth(s.viewer(s.restoreTrash)))
 	mux.HandleFunc("POST /v1/groups/{g}/uploads", s.auth(s.member(s.uploads)))
 	mux.HandleFunc("POST /v1/groups/{g}/downloads", s.auth(s.member(s.downloads)))
 	mux.HandleFunc("POST /v1/groups/{g}/shares", s.auth(s.member(s.createShare)))
@@ -274,7 +291,8 @@ func (s *Server) ping(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"api_versions": []int{1}, "build": version})
 }
 
-// auth verifies the token before anything else touches the bucket.
+// auth verifies the token before anything else touches the bucket: a session
+// token this backend made (session.go) or a Google ID token.
 func (s *Server) auth(next handler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		tok, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
@@ -282,16 +300,32 @@ func (s *Server) auth(next handler) http.HandlerFunc {
 			writeErr(w, http.StatusUnauthorized, "missing bearer token")
 			return
 		}
-		id, err := s.verifier.Verify(r.Context(), tok)
-		if err != nil || !id.EmailVerified || id.Sub == "" {
-			writeErr(w, http.StatusUnauthorized, "invalid token")
-			return
+		var id Identity
+		if strings.HasPrefix(tok, sessionPrefix) {
+			sid, valid, err := s.verifySession(r.Context(), tok, r.Host)
+			if err != nil {
+				writeErr(w, http.StatusBadGateway, "storage error")
+				return
+			}
+			if !valid {
+				writeErr(w, http.StatusUnauthorized, "invalid token")
+				return
+			}
+			id = sid
+		} else {
+			var err error
+			id, err = s.verifier.Verify(r.Context(), tok)
+			if err != nil || !id.EmailVerified || id.Sub == "" {
+				writeErr(w, http.StatusUnauthorized, "invalid token")
+				return
+			}
+			if !s.tokenBoundHere(id, r) {
+				writeErr(w, http.StatusUnauthorized, "invalid token")
+				return
+			}
+			id.RawSub = id.Sub
 		}
-		if !s.tokenBoundHere(id, r) {
-			writeErr(w, http.StatusUnauthorized, "invalid token")
-			return
-		}
-		id.RawSub = id.Sub
+		var err error
 		if id.Sub, err = s.hashSub(r.Context(), id.RawSub); err != nil {
 			writeErr(w, http.StatusBadGateway, "storage error")
 			return

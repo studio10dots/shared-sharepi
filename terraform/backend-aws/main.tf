@@ -16,7 +16,7 @@ locals {
 }
 
 # One bucket for all groups. Only the backend's execution role can reach it
-# (Agents.md section 9): there is no per-group IAM here, the backend itself
+# (docs/SECURITY.md, "Group Access"): there is no per-group IAM here, the backend itself
 # authorizes every request against {group_id}/members.json.
 resource "aws_s3_bucket" "photos" {
   bucket = local.bucket_name
@@ -82,7 +82,7 @@ resource "aws_s3_bucket_lifecycle_configuration" "photos" {
     }
   }
 
-  # Share-link manifests (Agents.md section 3, "{group_id}/shares/{share_id}.share.json")
+  # Share-link manifests (docs/BACKEND_DESIGN.md section 16, "{group_id}/shares/{share_id}.share.json")
   # are access grants that already expire in minutes via their own signed URL;
   # this just clears the small objects themselves out of the bucket afterwards.
   # S3 lifecycle rules cannot filter by suffix (unlike the GCS module's
@@ -133,7 +133,7 @@ resource "aws_iam_role" "backend" {
 }
 
 # Least privilege: object-level access on this bucket only, nothing project-
-# (account-) wide (Agents.md section 13). GetObjectVersion/ListBucketVersions
+# (account-) wide (docs/SECURITY.md, "Credentials"). GetObjectVersion/ListBucketVersions
 # and DeleteObjectVersion back Store.ListDeleted/Restore/ReadDeleted; the two
 # *Tagging actions are only used when writing a share manifest (see the
 # share-manifest-expiry lifecycle rule above).

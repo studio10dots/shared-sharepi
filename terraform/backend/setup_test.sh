@@ -34,7 +34,29 @@ case "\$1 \$2" in
   "services enable")
     if [ -n "\${FAKE_ENABLE_ERROR:-}" ]; then echo "\$FAKE_ENABLE_ERROR" >&2; exit 1; fi ;;
   "auth print-identity-token") echo "$fake_jwt" ;;
-  "storage buckets") if [ "\$3" = "describe" ]; then exit "\${FAKE_BUCKET_DESCRIBE_EXIT:-1}"; fi ;;
+  "storage buckets")
+    if [ "\$3" = "describe" ]; then exit "\${FAKE_BUCKET_DESCRIBE_EXIT:-1}"; fi
+    # A bucket made during the run is the project's from then on.
+    if [ "\$3" = "create" ]; then echo "\${4#gs://}" >> "\$FAKE_DIR/created_buckets"; exit 0; fi
+    # The buckets of the project: FAKE_PROJECT_BUCKETS (space-separated) and the ones made above.
+    if [ "\$3" = "list" ]; then
+      for b in \${FAKE_PROJECT_BUCKETS:-}; do echo "\$b"; done
+      cat "\$FAKE_DIR/created_buckets" 2> /dev/null
+      exit 0
+    fi ;;
+  "storage rm")
+    # The bucket named last is gone.
+    gone="\${@: -1}"; gone="\${gone#gs://}"
+    if [ -f "\$FAKE_DIR/created_buckets" ]; then
+      grep -vxF "\$gone" "\$FAKE_DIR/created_buckets" > "\$FAKE_DIR/created_buckets.tmp" || true
+      mv "\$FAKE_DIR/created_buckets.tmp" "\$FAKE_DIR/created_buckets"
+    fi
+    exit 0 ;;
+  "storage ls")
+    # An object exists when "bucket/path" is in FAKE_OBJECTS (space-separated).
+    for o in \${FAKE_OBJECTS:-}; do if [ "gs://\$o" = "\$3" ]; then exit 0; fi; done
+    exit 1 ;;
+  "storage rsync") exit "\${FAKE_RSYNC_EXIT:-0}" ;;
 esac
 exit 0
 EOF
@@ -60,6 +82,34 @@ case "$1" in
       flaky) if [ "$n" -lt 2 ]; then echo "Error 403: Service Usage API has not been used (SERVICE_DISABLED)"; exit 1; fi; echo "Apply complete!"; exit 0 ;;
       always_disabled) echo "Error 403: SERVICE_DISABLED"; exit 1 ;;
       other) echo "Error: something else entirely"; exit 1 ;;
+      # Google made the photos bucket but the answer was lost; the retry is told it is ours.
+      owned409|owned409_always)
+        if [ "${FAKE_APPLY}" = owned409_always ] || [ "$n" -lt 2 ]; then
+          echo "google_storage_bucket.photos: Creating..."
+          echo
+          echo "Error: googleapi: Error 409: Your previous request to create the named bucket succeeded and you already own it., conflict"
+          echo
+          echo "  with google_storage_bucket.photos,"
+          echo "  on main.tf line 49, in resource \"google_storage_bucket\" \"photos\":"
+          exit 1
+        fi
+        echo "google_cloud_run_v2_service.backend: Creation complete after 20s"
+        echo "Apply complete! Resources: 1 added, 0 changed, 0 destroyed."; exit 0 ;;
+    esac ;;
+  import)
+    if [ "${FAKE_IMPORT_EXIT:-0}" -ne 0 ]; then echo "Error: Cannot import non-existent remote object"; exit "$FAKE_IMPORT_EXIT"; fi
+    echo "google_storage_bucket.photos: Import prepared!"; exit 0 ;;
+  state)
+    case "$2" in
+      show)
+        # The photos bucket the state holds, if any (FAKE_STATE_PHOTOS is its name).
+        if [ -z "${FAKE_STATE_PHOTOS:-}" ]; then echo "No instance found for the given address!" >&2; exit 1; fi
+        echo "# google_storage_bucket.photos:"
+        echo 'resource "google_storage_bucket" "photos" {'
+        echo "    location                    = \"ASIA-NORTHEAST1\""
+        echo "    name                        = \"$FAKE_STATE_PHOTOS\""
+        echo "}"; exit 0 ;;
+      rm) echo "Successfully removed 1 resource instance(s)."; exit 0 ;;
     esac ;;
   output)
     case "$3" in
@@ -77,7 +127,7 @@ run_setup() { # name, then FAKE_* assignments as arguments; sets $out, $rc, $log
   mkdir -p "$d/scripts"
   cp "$here"/*.sh "$d/scripts/"
   : > "$d/calls"
-  rm -f "$d/apply_count"
+  rm -f "$d/apply_count" "$d/created_buckets"
   log="$d/setup.log"
   # FAKE_LANG_ARG=ja adds the optional third argument; LANG is set to something
   # that is not Japanese so that the language is chosen by the test alone.
@@ -238,13 +288,119 @@ run_setup other FAKE_APPLY=other
 [ "$(cat "$work/run_other/apply_count")" = "1" ] && ok "apply: another error is not retried" || bad "apply other: retried"
 contains "apply: another error is explained generically" "$out" 'cause is not one this script knows'
 
+# ---------------------------------------------------------------- a bucket Google made but we never heard of
+# The owner does nothing: the bucket goes into the state and the apply carries on.
+run_setup adopt FAKE_APPLY=owned409
+[ "$rc" -eq 0 ] && ok "adopt: carries on and finishes" || bad "adopt: exit $rc: $out"
+contains "adopt: imports the photos bucket under the name main.tf derives" "$calls" 'google_storage_bucket.photos sharepi-hoge-vfltdc-photos'
+contains "adopt: the import gets the same variables as the apply" "$calls" 'terraform import -input=false -var=project_id=hoge-vfltdc'
+[ "$(cat "$work/run_adopt/apply_count")" = "2" ] && ok "adopt: the apply ran again after the import" || bad "adopt: ran $(cat "$work/run_adopt/apply_count") times"
+contains "adopt: says what it is doing" "$out" 'picking up what an earlier run already made'
+contains "adopt: a new backend is called ready" "$out" 'Your backend is ready.'
+[ "$(grep -v '^[[:space:]]*$' <<< "$out" | tail -n 1)" = "$url" ] && ok "adopt: still ends on the URL" || bad "adopt: the last line is not the URL"
+lacks "adopt: the error is not shown to the owner" "$out" 'you already own it'
+FAKE_LANG_ARG_VALUE=ja run_setup adopt_ja FAKE_APPLY=owned409
+contains "adopt: the message is in the owner's language" "$out" '前回の実行で作られたものを引き継いで、続けます'
+
+# It is tried once. An import that fails, or a 409 that comes back, stops the run
+# and is not blamed on somebody else's bucket.
+run_setup adopt_bad_import FAKE_APPLY=owned409 FAKE_IMPORT_EXIT=1
+[ "$rc" -ne 0 ] && ok "adopt: a failing import stops the run" || bad "adopt: a failing import did not stop it"
+[ "$(cat "$work/run_adopt_bad_import/apply_count")" = "1" ] && ok "adopt: no second apply after a failed import" || bad "adopt: applied again after a failed import"
+lacks "adopt: not reported as another project's bucket (import fails)" "$out" 'already taken by'
+run_setup adopt_loop FAKE_APPLY=owned409_always
+[ "$rc" -ne 0 ] && ok "adopt: a 409 that keeps coming stops the run" || bad "adopt: a repeating 409 did not stop it"
+[ "$(cat "$work/run_adopt_loop/apply_count")" = "2" ] && ok "adopt: imported once, applied twice, no loop" || bad "adopt: ran $(cat "$work/run_adopt_loop/apply_count") times"
+[ "$(count 'terraform import' "$calls")" = "1" ] && ok "adopt: the import ran once" || bad "adopt: the import ran $(count 'terraform import' "$calls") times"
+lacks "adopt: not reported as another project's bucket (409 repeats)" "$out" 'already taken by'
+
+# What each message means: another project holding the name is reported as such, the
+# owner's own bucket ("you already own it") is not.
+source "$here/setup_ui.sh"
+[ "$(ui_classify 'Error 409: Your previous request to create the named bucket succeeded and you already own it., conflict')" != bucket_taken ] && ok "classify: 'you already own it' is not another project's bucket" || bad "classify: 'you already own it' reported as taken"
+[ "$(ui_classify 'ERROR: HTTPError 409: The requested bucket name is not available. The bucket namespace is shared by all users of the system.')" = bucket_taken ] && ok "classify: a name held by somebody else is reported" || bad "classify: 'not available' not reported as taken"
+[ "$(ui_classify "A Cloud Storage bucket named 'x' already exists. Try another name.")" = bucket_taken ] && ok "classify: 'already exists' is reported" || bad "classify: 'already exists' not reported as taken"
+
 # ---------------------------------------------------------------- the state bucket
 run_setup bucket_new FAKE_BUCKET_DESCRIBE_EXIT=1
-contains "state bucket: created when missing" "$calls" 'gcloud storage buckets create gs://hoge-vfltdc-tfstate'
+contains "state bucket: created when missing" "$calls" 'gcloud storage buckets create gs://sharepi-hoge-vfltdc-tfstate'
 contains "state bucket: says so" "$out" 'ok (created)'
 run_setup bucket_old FAKE_BUCKET_DESCRIBE_EXIT=0
 lacks "state bucket: not created again" "$calls" 'buckets create'
 contains "state bucket: says so" "$out" 'ok (already there)'
+
+# ---------------------------------------------------------------- buckets under the earlier names
+# Buckets used to be "<project>-tfstate" and "<project>-photos"; they are now
+# "sharepi-<project>-...". An owner who set up under the earlier names is moved over
+# by running the same command again, with nothing to do and nothing deleted.
+line_of() { grep -n -F -- "$2" <<< "$1" | head -n 1 | cut -d: -f1; }
+earlier_state="hoge-vfltdc-tfstate"
+earlier_photos="hoge-vfltdc-photos"
+new_state="sharepi-hoge-vfltdc-tfstate"
+new_photos="sharepi-hoge-vfltdc-photos"
+
+run_setup earlier_none
+lacks "earlier buckets: a fresh project copies nothing" "$calls" 'storage rsync'
+lacks "earlier buckets: a fresh project leaves the state alone" "$calls" 'terraform state rm'
+lacks "earlier buckets: a fresh project is not told about old buckets" "$out" 'with the earlier names'
+
+# -- the state bucket
+run_setup earlier_state FAKE_PROJECT_BUCKETS="$earlier_state" FAKE_OBJECTS="$earlier_state/sharepi-backend/default.tfstate"
+[ "$rc" -eq 0 ] && ok "state move: finishes" || bad "state move: exit $rc: $out"
+contains "state move: copies the state to the new bucket" "$calls" "gcloud storage rsync --recursive --exclude=.*\\.tflock\$ gs://$earlier_state gs://$new_state"
+contains "state move: Terraform is pointed at the new bucket" "$(cat "$work/run_earlier_state/scripts/backend.tf")" "bucket = \"$new_state\""
+lacks "state move: the earlier bucket is never deleted" "$calls" "storage rm --recursive gs://$earlier_state"
+contains "state move: says which bucket was left" "$out" "gs://$earlier_state"
+contains "state move: gives the command that deletes it" "$out" "gcloud storage rm --recursive gs://$earlier_state"
+[ "$(grep -v '^[[:space:]]*$' <<< "$out" | tail -n 1)" = "$url" ] && ok "state move: still ends on the URL" || bad "state move: the last line is not the URL"
+FAKE_LANG_ARG_VALUE=ja run_setup earlier_state_ja FAKE_PROJECT_BUCKETS="$earlier_state" FAKE_OBJECTS="$earlier_state/sharepi-backend/default.tfstate"
+contains "state move: the note is in the owner's language" "$out" 'そのまま残してあります'
+
+run_setup earlier_state_foreign FAKE_PROJECT_BUCKETS="$earlier_state"
+lacks "state move: a bucket that only has the name is not copied" "$calls" 'storage rsync'
+run_setup earlier_state_done FAKE_BUCKET_DESCRIBE_EXIT=0 FAKE_PROJECT_BUCKETS="$earlier_state" FAKE_OBJECTS="$earlier_state/sharepi-backend/default.tfstate"
+lacks "state move: never copies over a state that already moved (it would be the stale one)" "$calls" 'storage rsync'
+run_setup earlier_state_fails FAKE_PROJECT_BUCKETS="$earlier_state" FAKE_OBJECTS="$earlier_state/sharepi-backend/default.tfstate" FAKE_RSYNC_EXIT=1
+[ "$rc" -ne 0 ] && ok "state move: a failed copy stops the run" || bad "state move: a failed copy did not stop it"
+contains "state move: the half-made bucket is removed, so the next run starts again" "$calls" "storage rm --recursive gs://$new_state"
+[ ! -f "$work/run_earlier_state_fails/apply_count" ] && ok "state move: nothing was applied after a failed copy" || bad "state move: applied after a failed copy"
+
+# -- the photos bucket
+run_setup earlier_photos FAKE_PROJECT_BUCKETS="$earlier_photos" FAKE_STATE_PHOTOS="$earlier_photos"
+[ "$rc" -eq 0 ] && ok "photos move: finishes" || bad "photos move: exit $rc: $out"
+c_create="$(line_of "$calls" "gcloud storage buckets create gs://$new_photos")"
+c_copy="$(line_of "$calls" "gcloud storage rsync --recursive gs://$earlier_photos gs://$new_photos")"
+c_rm="$(line_of "$calls" 'terraform state rm google_storage_bucket.photos')"
+c_import="$(line_of "$calls" "google_storage_bucket.photos $new_photos")"
+c_apply="$(line_of "$calls" 'terraform apply')"
+if [ -n "$c_create" ] && [ -n "$c_copy" ] && [ -n "$c_rm" ] && [ -n "$c_import" ] && [ -n "$c_apply" ] \
+  && [ "$c_create" -lt "$c_copy" ] && [ "$c_copy" -lt "$c_rm" ] && [ "$c_rm" -lt "$c_import" ] && [ "$c_import" -lt "$c_apply" ]; then
+  ok "photos move: new bucket, copy, forget the old one in the state, take the new one in, and only then apply"
+else
+  bad "photos move: wrong order (create=$c_create copy=$c_copy rm=$c_rm import=$c_import apply=$c_apply)"
+fi
+lacks "photos move: the earlier bucket is never deleted" "$calls" "storage rm --recursive gs://$earlier_photos"
+contains "photos move: says which bucket was left" "$out" "gs://$earlier_photos"
+contains "photos move: says it is copying" "$out" 'copying your data under the new bucket names'
+[ "$(grep -v '^[[:space:]]*$' <<< "$out" | tail -n 1)" = "$url" ] && ok "photos move: still ends on the URL" || bad "photos move: the last line is not the URL"
+
+run_setup earlier_photos_secret FAKE_PROJECT_BUCKETS="$earlier_photos" FAKE_OBJECTS="$earlier_photos/_backend/secret.json"
+contains "photos move: a bucket the backend wrote to is copied even when the state has none" "$calls" "gcloud storage rsync --recursive gs://$earlier_photos gs://$new_photos"
+lacks "photos move: ... and there is nothing to forget in the state" "$calls" 'terraform state rm'
+run_setup earlier_photos_foreign FAKE_PROJECT_BUCKETS="$earlier_photos"
+lacks "photos move: a bucket that only has the name (empty, not in the state) is left alone" "$calls" 'storage rsync'
+run_setup earlier_photos_state_only FAKE_PROJECT_BUCKETS="$earlier_photos $new_photos" FAKE_STATE_PHOTOS="$earlier_photos"
+lacks "photos move: a copy that was already made is not made again" "$calls" 'storage rsync'
+contains "photos move: ... but a run cut short before the state moved is finished" "$calls" "google_storage_bucket.photos $new_photos"
+run_setup earlier_photos_done FAKE_PROJECT_BUCKETS="$earlier_photos $new_photos" FAKE_STATE_PHOTOS="$new_photos"
+lacks "photos move: a bucket that already moved is not touched" "$calls" 'terraform state rm'
+lacks "photos move: ... and not copied" "$calls" 'storage rsync'
+lacks "photos move: ... and not announced again" "$out" 'with the earlier names'
+run_setup earlier_photos_fails FAKE_PROJECT_BUCKETS="$earlier_photos" FAKE_STATE_PHOTOS="$earlier_photos" FAKE_RSYNC_EXIT=1
+[ "$rc" -ne 0 ] && ok "photos move: a failed copy stops the run" || bad "photos move: a failed copy did not stop it"
+contains "photos move: the half-made bucket is removed, so the next run starts again" "$calls" "storage rm --recursive gs://$new_photos"
+lacks "photos move: the state is not touched after a failed copy" "$calls" 'terraform state rm'
+[ ! -f "$work/run_earlier_photos_fails/apply_count" ] && ok "photos move: nothing was applied after a failed copy" || bad "photos move: applied after a failed copy"
 
 # ---------------------------------------------------------------- the banner's colours
 # shellcheck source=setup_ui.sh

@@ -40,9 +40,17 @@ type Settings struct {
 }
 
 // defaultSettings is what a backend that was never configured uses: at most 5
-// minutes, and a question for anything over 2 (what the app always did).
+// minutes and 500 MB, and a question once a video is over 80% of either (4
+// minutes, 400 MB). The 80% is only this starting point, not a rule the owner's
+// values are held to.
+// (Earlier: 5 minutes and a question over 2, no size limit.)
 func defaultSettings() Settings {
-	return Settings{Version: 1, Video: VideoSettings{MaxSeconds: 5 * 60, ConfirmSeconds: 2 * 60}}
+	return Settings{Version: 1, Video: VideoSettings{
+		MaxSeconds:     5 * 60,
+		MaxBytes:       500 << 20,
+		ConfirmSeconds: 4 * 60,
+		ConfirmBytes:   400 << 20,
+	}}
 }
 
 const maxVideoSeconds = 24 * 60 * 60

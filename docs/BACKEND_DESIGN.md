@@ -42,7 +42,7 @@ Roles:
 | Role | Who | Can |
 |---|---|---|
 | Owner / administrator | The person who contracted the GCP project and ran Terraform | Create groups, issue invitations, remove members. Registers **one** backend as their own. |
-| Member | Anyone invited to a group | Browse, upload, delete photos and events of the groups they belong to, on any number of backends |
+| Member | Anyone invited to a group | Browse and upload in the groups they belong to, and delete their own photos and videos, on any number of backends |
 
 An ordinary member needs no GCP project. A user can be a member of groups on many backends but
 owns at most one.
@@ -105,6 +105,44 @@ recomputes it from the request's `Host` and compares it with the token's `nonce`
 Binding does not hide the token from a backend that receives it, and the backend still learns the
 member's email address from it; it only makes the token useless anywhere else.
 
+### Sessions
+
+A Google ID token lives about an hour and a phone has nothing to refresh it with, so an app that
+sent one on every call would have to ask Google for a new one (which can show the account panel)
+every hour, for every backend. Instead the app sends **one** bound ID token to
+`POST /v1/session` and gets back a token only this backend accepts:
+
+```text
+POST /v1/session          Authorization: Bearer <ID token bound to this backend>
+200 {"token": "s1.<claims>.<mac>", "expires_at": "2026-10-16T12:00:00Z"}
+```
+
+- The token is stateless: `s1.` + base64url(claims `{sub, email, h, iat, exp, oat}`) + `.` +
+  base64url(HMAC-SHA256), keyed from the backend's own secret (`_backend/secret.json`, a key derived
+  for this purpose alone). Nothing is stored. Replacing the secret ends every session.
+- One token lives **24 hours** (`Config.SessionTTL`, default `DefaultSessionTTL`). `h` is this
+  backend's host binding, so a session is refused by any other backend.
+- **Sliding renewal.** `POST /v1/session` also takes a still-valid session (`Authorization: Bearer
+  s1....`) and answers with a new one, another 24 hours long, without Google. `oat` is when the ID
+  token at the head of the chain was proven; renewals keep it, and no session ends after `oat` +
+  **7 days** (`Config.SessionMaxAge`, default `DefaultSessionMaxAge`). Once the chain is spent, or
+  the session has expired, only an ID token makes a new one. The app renews a session when less
+  than 12 hours of it are left, so Google is asked once per backend and week of use.
+- The cost of renewal is that a stolen token, if its thief keeps renewing it, works until the 7 days
+  are over, and the backend is stateless, so it cannot see that. What stays immediate is
+  everything checked per request: the roster (a removed member is refused at once) and the
+  administrators.
+- It proves who the caller is and nothing more. Membership of a group and being an administrator are
+  looked up on **every** request (`ADMIN_SUBS` / `ADMIN_EMAILS`, the roster), so removing a member
+  or changing the administrators takes effect at once.
+- Any endpoint that takes the ID token takes a session (`Authorization: Bearer s1....`) instead. A
+  bad or expired one is `401`; the app then makes a new one from a fresh ID token, once.
+- A backend from before sessions answers `404` to `POST /v1/session`; the app then keeps sending the
+  ID token to it, as it always did. The API version does not change.
+- The app keeps each backend's session in SQLite (`backend_sessions`) and empties it on sign-out and
+  when the account changes. A session that is refused is made again, once, from a fresh ID token;
+  a failed renewal just goes on with the session it has until that runs out.
+
 ## 4. Bucket layout
 
 One bucket per backend. Groups are prefixes; isolation is enforced by the backend, not by IAM
@@ -118,6 +156,7 @@ Conditions.
   {group_id}/invites/{nonce}               empty marker: this invitation was used
   {group_id}/reports/{report_id}.json      a member's report (section 7, "Moderation")
   {group_id}/reports/resolved/{report_id}  empty marker: that report is resolved
+  {group_id}/joins/{key}.json              a stranger's invitation request (section 18); key = keyed hash of their id
   {group_id}/members/{user_id}/favorites.json  that member's favorite folders and items (section 15)
   {group_id}/shares/{share_id}.share.json  a share-link manifest (section 16)
   {group_id}/{event_id}/event.json         the event: {"name": "...", "date": "YYYY/MM/DD"}
@@ -129,7 +168,7 @@ Conditions.
 - `group_id` matches `^[a-z0-9][a-z0-9_-]{2,39}$` (3-40 characters) — in particular it cannot start with `_`, so it never
   collides with `_backend/`.
 - `event_id` matches `^[a-z0-9]{8,32}$` and is checked on every route that takes one. Events sit in the same namespace
-  as the group's reserved folders `invites/`, `reports/`, `members/` and `shares/` (6-7 characters each), so the length
+  as the group's reserved folders `invites/`, `reports/`, `members/`, `shares/` and `joins/` (5-7 characters each), so the length
   floor keeps an event id from ever being one of them; the backend also refuses those names explicitly (and the app
   never generates one).
 - The date is deliberately not part of any path: changing an event's date overwrites `event.json` and
@@ -227,7 +266,7 @@ roster's current nickname.
 - It makes reinstalling harmless: no new invitation is needed.
 
 All paths are under `/v1` except `/ping`. JSON in and out. Every endpoint except `/ping` requires
-the bearer ID token. Errors: `401` (token), `403` (not an administrator), `404` (unknown or not
+the bearer ID token (or a session token, [Sessions](#sessions)). Errors: `401` (token), `403` (not an administrator), `404` (unknown or not
 yours), `409` (already exists), `410` (invitation `invitation_expired` or `invitation_used`),
 `422` (validation; also a malformed or forged invitation), `429` (too many open reports), `5xx` (retry). Write conflicts on
 the roster (`412` from GCS) are retried inside the backend.
@@ -254,6 +293,10 @@ invite to it and remove members, but cannot list its photos.
 | `POST /v1/groups/{g}/leave` | member | The caller leaves: status `left`, `sub`/`nickname` erased (`204`). A second call gets `404`, like any non-member, because the row no longer says who the caller was. |
 | `POST /v1/groups/{g}/reports` | member | `{target: {type: item, event: "<event_id>", photo_id} \| {type: user, user_id}, reason, note}` -> `201 {report_id}`. Sending exactly the same report again (same target, reason and note) returns the open report (`200`); another reason or note for the same target is a new report; at most 20 open reports per reporter (`429`); an unknown item or user is `404`, reporting yourself or a member who left is refused. |
 | `GET /v1/groups/{g}/reports` | admin | Open reports, newest first, each with the reporter's and (for a user report) the target's current nickname, `status`, and for an item report its `original` object; never an email or `sub`. `?include=resolved` adds the resolved ones (with `resolved_at`). |
+| `POST /v1/groups/{g}/join-requests` | signed in | `{nickname, note?}`: ask the group's owner for an invitation (section 18). `202 {status: "sent"}`, also for a group that does not exist; `200 {status: "member"}` for an active member; `422` for a bad nickname or note. |
+| `GET /v1/groups/{g}/join-requests` | admin | `{requests: [{id, nickname, note, requested_at}]}`, oldest first. |
+| `DELETE /v1/groups/{g}/join-requests/{id}` | admin | Dismiss a request (idempotent). |
+| `GET /v1/join-requests/open` | admin | `{groups: {"<group_id>": n}}`: open request counts, from listings only. Asked together with `/v1/reports/open`. |
 | `GET /v1/reports/open` | admin | `{groups: {"<group_id>": ["<report_id>", ...]}}`: the open reports of every group on the backend, from listings only (report files minus resolved markers). The administrator's app asks about once a minute while in the foreground. `GET /v1/groups/{g}` also carries `open_reports` for an administrator. Also carries `update_available: {version}` at most once (see "Update notice" below). |
 | `POST /v1/groups/{g}/reports/{report_id}/resolve` | admin | Mark a report resolved (idempotent) and write its resolved marker. Deleting the reported item does not remove the report. |
 | `GET /v1/groups/{g}/favorites` | member | The caller's own favorite folders and items in the group (section 15); empty when there are none. |
@@ -261,18 +304,32 @@ invite to it and remove members, but cannot list its photos.
 | `GET /v1/groups/{g}/events` | member | Events (`date`, `id`, `name`), sorted by date: one delimiter listing of `{g}/`, then each folder's `event.json` read in parallel. Reserved folders and folders without a valid `event.json` are skipped. |
 | `POST /v1/groups/{g}/events` | member | `{date, id, name}` -> write `event.json` (create-only: a retry, or a second call, returns the stored event unchanged; `id` is 8-32 chars of `[a-z0-9]`, chosen by the app; `name` is 1-64 chars of text, no control characters; `date` a real `YYYY/MM/DD`). |
 | `PUT /v1/groups/{g}/events/{id}` | member | `{name?, date?}`, at least one -> change the event's name and/or date (`422` if none or invalid, `404` if the event has no valid `event.json`). A read-modify-write of `event.json` guarded by a generation precondition and retried on conflict, so concurrent edits do not overwrite each other. Any member. Returns `{date, id, name}`. |
-| `DELETE /v1/groups/{g}/events/{id}` | member | Soft-delete everything under the event prefix. Returns the number of objects. |
+| `DELETE /v1/groups/{g}/events/{id}` | owner, or a member while the event holds no photo or video | Soft-delete everything under the event prefix. Returns the number of objects. `403` for a member when it holds photos. |
 | `GET /v1/groups/{g}/events/{id}/items` | member | Items, oldest upload first: `photo_id`, `media_type` (image/video), `ext`, `size`, `uploaded_at`, `uploader` (`user_id`). |
-| `GET /v1/groups/{g}/trash` | member | Soft-deleted media of the group still inside the retention window: `objects: [{path, generation, deleted_at}]`, only media objects (never the roster, invitations or reports); plus `events: [{id, name, date, restore?}]`, one entry per event any of those objects belong to, so the client can show each item's destination — `name`/`date` come from the event's live `event.json`, or, if that too was deleted, from the newest deleted copy, in which case `restore` names it (`{path, generation}`) so restoring it brings the event back along with its items. |
-| `GET /v1/groups/{g}/trash/thumbnail` | member | `?path=&generation=` -> the raw JPEG bytes of one deleted item's thumbnail. A soft-deleted object has no signed URL, so this is the one place photo bytes pass through the backend; `path` must be a thumbnail object of the caller's group. |
-| `POST /v1/groups/{g}/trash/restore` | member | `{objects: [{path, generation}]}` (at most 50) -> restores them, derivatives first, the original next, and a deleted `event.json` last. `404` once past the retention window. |
+| `GET /v1/groups/{g}/trash` | owner | Soft-deleted media of the group still inside the retention window: `objects: [{path, generation, deleted_at}]`, only media objects (never the roster, invitations or reports); plus `events: [{id, name, date, restore?}]`, one entry per event any of those objects belong to, so the client can show each item's destination — `name`/`date` come from the event's live `event.json`, or, if that too was deleted, from the newest deleted copy, in which case `restore` names it (`{path, generation}`) so restoring it brings the event back along with its items. |
+| `GET /v1/groups/{g}/trash/thumbnail` | owner | `?path=&generation=` -> the raw JPEG bytes of one deleted item's thumbnail. A soft-deleted object has no signed URL, so this is the one place photo bytes pass through the backend; `path` must be a thumbnail object of the caller's group. |
+| `POST /v1/groups/{g}/trash/restore` | owner | `{objects: [{path, generation}]}` (at most 50) -> restores them, derivatives first, the original next, and a deleted `event.json` last. `404` once past the retention window. |
 | `POST /v1/groups/{g}/uploads` | member | `{event_id, photo_id, ext, kinds}` -> signed PUT URLs for thumbnail, medium (a video's is its first frame) and original. `event_name` + `event_date`, when both are sent and valid, also create the event's `event.json` if it is missing (create-only), so an upload to an event whose creation call never got through still shows under its name. At most 3 kinds (one URL each; a repeated kind is signed once, more than 3 entries is `422`). `409 item_exists` when an object of that item already exists that another member uploaded (see "Signed URLs"). |
 | `POST /v1/groups/{g}/downloads` | member | Batch of object paths -> signed GET URLs. |
-| `DELETE /v1/groups/{g}/events/{id}/items/{photo_id}` | member | Soft-delete the item's original, medium and thumbnail (`204`; `404` if the original is gone). |
+| `DELETE /v1/groups/{g}/events/{id}/items/{photo_id}` | uploader or owner | Soft-delete the item's original, medium and thumbnail (`204`; `404` if the original is gone; `403` for another member's item). |
 | `POST /v1/groups/{g}/shares` | member | `{items: [{event_id, photo_id, ext}], ttl_minutes: 5\|10\|15}` (1-30 items, default 10) -> `{share_id, url, expires_at}` (section 16). |
 
-Who may delete stays as before: any member can delete photos and events; retention is GCS
-soft delete.
+**Who may delete.** Anyone could delete anything once, so one member could empty a group and the
+owner would find out only when the retention window had run out. Now:
+
+- a member deletes **only what they uploaded** (`x-goog-meta-uploader` is their `user_id`; `403`
+  otherwise, and an object with no uploader, from before it was recorded, is the owner's alone);
+- the backend's administrator (the owner) deletes **anyone's** photos and videos, member of the
+  group or not (`viewer` access);
+- an **event** is deleted by the owner, or by anyone while it holds no photo or video (one made by
+  mistake); an event with photos is `403` for a member, who can delete their own photos first;
+- the **trash** (list, thumbnail, restore) is the owner's: a member gets `403`. A member who
+  deleted something by mistake asks the owner, who sees everyone's deletions. (The listing of
+  soft-deleted objects carries no uploader, so a per-member trash would need a lookup per object on
+  S3.)
+
+Retention is still the bucket's soft delete (30 days). The roster is not consulted for deletion beyond
+"is this caller a member or the administrator".
 
 ### Update notice
 
@@ -321,7 +378,7 @@ account/data deletion. The publisher runs no server, so all of it lives on the o
   interaction is ever added.
 - **Leaving.** `POST .../leave` sets the caller's row to `left` and erases `sub` and
   `nickname`, and deletes their favorites document (section 15). Their photos stay and are shown as "left member"; a member who wants theirs gone
-  deletes them before leaving (any member can already delete photos). A privacy page (not the app)
+  deletes them before leaving (a member can delete what they uploaded). A privacy page (not the app)
   tells people how to request deletion: leave the group, and ask the group's owner to delete photos
   or the whole project; the publisher holds no such data.
 - **Data an administrator keeps.** A `removed` member's row (with the hashed `sub`) is kept so the
@@ -402,7 +459,7 @@ because authentication is in the application: Cloud Run's invoker IAM check is d
 granting `allUsers`, which an organization's Domain Restricted Sharing policy would refuse), and an optional budget alert. Output: the service URL
 to type into the app.
 
-Terraform state lives in a small GCS bucket `<project_id>-tfstate` (Cloud Shell's home is not
+Terraform state lives in a small GCS bucket `sharepi-<project_id>-tfstate` (Cloud Shell's home is not
 permanent). `terraform/backend/setup.sh` creates the bucket if needed, points Terraform at it
 and runs `terraform apply`; the owner's one command is the same for the first setup and for every
 update (each run starts from a fresh clone, which carries the newest `backend_image`).
@@ -531,16 +588,20 @@ how large and how long one may be. The settings are one small object, `_backend/
 written only by `PUT /v1/settings` with a generation precondition (single writer). A backend that was never configured uses the defaults below.
 
 ```text
-{"version": 1, "video": {"max_seconds": 300, "max_bytes": 0, "confirm_seconds": 120, "confirm_bytes": 0}}
+{"version": 1, "video": {"max_seconds": 300, "max_bytes": 524288000, "confirm_seconds": 240, "confirm_bytes": 419430400}}
 ```
 
 | Field | Meaning (0 = no limit) | Default |
 |---|---|---|
-| `max_seconds` | A longer video is not uploaded. | 300 |
-| `max_bytes` | A larger video file is not uploaded. | 0 |
-| `confirm_seconds` | In the app's "full" mode a longer video asks: as it is, or compressed. | 120 |
-| `confirm_bytes` | The same, by size. | 0 |
+| `max_seconds` | A longer video is not uploaded. | 300 (5 minutes) |
+| `max_bytes` | A larger video file is not uploaded. | 524288000 (500 MB) |
+| `confirm_seconds` | In the app's "full" mode a longer video asks: as it is, or compressed. 0 is the explicit "do not ask" (the app's switch off). | 240 |
+| `confirm_bytes` | The same, by size. | 419430400 (400 MB) |
 
+- **The defaults.** At most 5 minutes and 500 MB, and the question once a video is over 80% of either
+  (240 s, 400 MB). The 80% is only where an unconfigured backend starts, not a rule: the owner sets
+  any values, with `confirm_* <= max_*` when both are set. The default 500 MB is enforced like any
+  `max_bytes`, so a backend that was never configured refuses a video file over it after this change.
 - **Size is enforced by the backend, length by the app.** The signed upload URL of a *video original*
   carries `min(backend limit, max_bytes)` as its size range, so a modified app cannot send a larger
   file. A video's length is not visible to the backend: `max_seconds` is the app's check, accepted the
@@ -556,3 +617,30 @@ written only by `PUT /v1/settings` with a generation precondition (single writer
 - **Reading is open to any signed-in user** (like `GET /v1/me`): the limits are not private, and the
   app reads them for a group it belongs to. An unreadable object is `502`, never the defaults: that
   would lift a limit the owner set. A read is reused for 30 seconds; a write drops it at once.
+
+---
+
+## 18. Links to a place in the app, and invitation requests
+
+**The link locates, it never grants.** A member can share a link to a group, an event or a photo through the OS
+share sheet. It carries the backend's URL and ids (`v=1`, `b`, `g`, `e`, `p`) and nothing secret: opening it
+needs the same membership as browsing without it (section 4). The form is
+`https://<host>/s#v=1&b=..&g=..&e=..&p=..` (parameters in the fragment, which a browser never sends, so the
+static page's server learns nothing) once a domain is configured (`SHARE_LINK_HOST`), and
+`sharepi://open?v=1&b=..&g=..` until then.
+
+**Opening it.** A device whose group list has that group (same backend) opens the event list, and the event when
+it is known. Anyone else gets "you cannot open this yet", told to ask the person who shared it to have the
+owner add them, and may send an invitation request.
+
+**Invitation requests.** `POST /v1/groups/{g}/join-requests` (any signed-in user; `{nickname, note?}`) writes
+`{g}/joins/{key}.json`, `key` being the keyed hash of the caller's id, so one person has at most one request per
+group (a new one replaces it) and nothing about the caller is stored but the nickname and note they typed.
+At most 50 are held per group. The answer is `202 {"status":"sent"}` whether or not the group exists, so
+the endpoint cannot be used to probe for group ids; an active member gets `200 {"status":"member"}`.
+Redeeming an invitation removes the person's request. The owner's app asks `GET /v1/join-requests/open` with
+the reports (about once a minute while in the foreground), announces new requests once, and lists and
+dismisses them from the group's settings (`GET`/`DELETE /v1/groups/{g}/join-requests`). There is no push and no
+email: the owner learns of a request only through the app, as with reports.
+
+Not yet: the https form needs a domain with `assetlinks.json`, and iOS needs Universal Links (docs/TODO.md).
