@@ -50,7 +50,7 @@ variable "google_client_id" {
 }
 
 variable "bucket_name" {
-  description = "Globally unique bucket name. Defaults to \"<project_id>-photos\"."
+  description = "Globally unique bucket name. Defaults to \"sharepi-<project_id>-photos\" (setup.sh copies an earlier \"<project_id>-photos\" bucket there; changing the name of a bucket that holds photos replaces it, so leave this unset)."
   type        = string
   default     = null
 }

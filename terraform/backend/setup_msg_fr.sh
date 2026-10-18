@@ -19,6 +19,10 @@ ui_fmt_fr() {
     admin_no_id) printf '%s' "impossible de lire votre identifiant d'utilisateur Google ; votre adresse e-mail sera utilisée" ;;
     admin_no_id_note) printf '%s' "      Relancez cette commande plus tard pour la fixer à votre identifiant, ou définissez admin_subs\n      (voir terraform.tfvars.example)." ;;
     retrying) printf '%s' " (un service n'est pas encore prêt ; nouvelle tentative dans 60 secondes) " ;;
+    adopting) printf '%s' " (reprise de ce qu'une exécution précédente a déjà créé) " ;;
+    copying) printf '%s' " (copie de vos données vers les buckets aux nouveaux noms ; cela peut prendre du temps) " ;;
+    old_buckets) printf '%s' "Les buckets aux anciens noms ont été copiés et laissés tels quels :" ;;
+    old_buckets_delete) printf '%s' "Quand vous aurez vérifié que tout fonctionne, vous pouvez les supprimer (ils coûtent toujours du stockage) :" ;;
     what_happened) printf '%s' "Ce qui s'est passé" ;;
     what_to_do) printf '%s' "Ce qu'il faut faire" ;;
     last_lines) printf '%s' "Les dernières lignes affichées par l'étape :" ;;
@@ -90,8 +94,9 @@ $(ui_t what_to_do)
 EOF
       ;;
     bucket_taken) cat << EOF
-  Le nom du bucket de l'état de la configuration (« $p-tfstate ») est déjà pris par
-  un autre projet. Les noms de bucket sont partagés par tous sur Google Cloud.
+  Un nom de bucket nécessaire à cette configuration (« sharepi-$p-tfstate » ou
+  « sharepi-$p-photos ») est déjà pris par un autre projet. Les noms de bucket
+  sont partagés par tous sur Google Cloud.
 
 $(ui_t what_to_do)
   Utilisez un projet dont l'ID n'a jamais servi pour un bucket. N'essayez pas de

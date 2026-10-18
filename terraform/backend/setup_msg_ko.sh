@@ -19,6 +19,10 @@ ui_fmt_ko() {
     admin_no_id) printf '%s' "Google 사용자 ID를 읽지 못해 이메일 주소로 확인합니다" ;;
     admin_no_id_note) printf '%s' "      나중에 이 명령을 다시 실행하면 사용자 ID로 확인합니다. 또는 admin_subs를 지정하세요\n      (terraform.tfvars.example 참고)." ;;
     retrying) printf '%s' " (서비스가 아직 준비되지 않았습니다. 60초 후에 다시 시도합니다) " ;;
+    adopting) printf '%s' " (이전 실행에서 이미 만든 것을 이어받아 계속합니다) " ;;
+    copying) printf '%s' " (데이터를 새 이름의 버킷으로 복사하고 있습니다. 시간이 걸릴 수 있습니다) " ;;
+    old_buckets) printf '%s' "이전 이름의 버킷은 복사한 뒤 그대로 남겨 두었습니다:" ;;
+    old_buckets_delete) printf '%s' "모든 것이 잘 동작하는 것을 확인한 뒤에는 삭제할 수 있습니다(남겨 두면 저장 비용이 계속 발생합니다):" ;;
     what_happened) printf '%s' "무슨 일이 있었나요" ;;
     what_to_do) printf '%s' "해야 할 일" ;;
     last_lines) printf '%s' "이 단계가 마지막으로 출력한 내용:" ;;
@@ -89,8 +93,9 @@ $(ui_t what_to_do)
 EOF
       ;;
     bucket_taken) cat << EOF
-  설정 상태를 보관하는 버킷의 이름("$p-tfstate")을 이미 다른 프로젝트가
-  사용하고 있습니다. 버킷 이름은 Google Cloud의 모든 사용자가 함께 씁니다.
+  이 설정에 필요한 버킷 이름("sharepi-$p-tfstate" 또는
+  "sharepi-$p-photos")을 이미 다른 프로젝트가 사용하고 있습니다.
+  버킷 이름은 Google Cloud의 모든 사용자가 함께 씁니다.
 
 $(ui_t what_to_do)
   버킷에 사용된 적이 없는 ID의 프로젝트를 사용하세요. 내 것이 아닌

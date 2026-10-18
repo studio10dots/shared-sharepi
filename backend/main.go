@@ -35,7 +35,8 @@ func (v googleVerifier) Verify(ctx context.Context, token string) (Identity, err
 
 // newStorage builds the bucket and the URL signer for the cloud this instance
 // runs on: STORAGE_PROVIDER is "gcs" (the default; Cloud Run) or "s3" (AWS,
-// terraform/backend-aws). The container is the same image for both.
+// terraform/backend-aws). It is the same program for both; the Lambda image is
+// the `aws` target of the Dockerfile.
 func newStorage(ctx context.Context, bucket string) (Store, Signer, error) {
 	switch p := os.Getenv("STORAGE_PROVIDER"); p {
 	case "", "gcs":

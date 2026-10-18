@@ -206,7 +206,7 @@ func TestMembersIsAReservedFolderNotAnEvent(t *testing.T) {
 	// The trash lists media only, so favorites cannot be listed or restored there.
 	e.st.put(group+"/members/u-alice/favorites.json", 10, nil, testNow)
 	_ = e.st.Delete(context.Background(), group+"/members/u-alice/favorites.json")
-	w := e.do("GET", "/v1/groups/"+group+"/trash", "alice", "")
+	w := e.do("GET", "/v1/groups/"+group+"/trash", "admin", "")
 	want(t, w, 200)
 	if strings.Contains(w.Body.String(), "members/") {
 		t.Errorf("the trash exposes members/: %s", w.Body)

@@ -18,12 +18,14 @@
 #   1. Checks the project exists and has a billing account linked.
 #   2. Makes sure Terraform is there (Cloud Shell no longer ships it).
 #   3. Turns on the Google Cloud APIs the stack needs.
-#   4. Makes a small bucket "<project_id>-tfstate" for Terraform's state if it is
-#      not there yet, and points Terraform at it (backend.tf, written here and
+#   4. Makes a small bucket "sharepi-<project_id>-tfstate" for Terraform's state
+#      if it is not there yet (an earlier "<project_id>-tfstate" is copied into
+#      it, see migrate_buckets.sh), and points Terraform at it (backend.tf, written here and
 #      never committed). The state lives in that bucket rather than in Cloud
 #      Shell's home, which is not permanent: when the home is reset, running the
 #      same command again finds the state and changes only what needs changing
-#      (no "already exists" errors, nothing to import).
+#      (no "already exists" errors, nothing to import). One exception is handled
+#      in step 7: a photos bucket that Google created but whose answer was lost.
 #   5. Finds the Google user id of the account running this script and passes it
 #      as admin_subs, so the backend recognises its administrator by that id
 #      (which never changes hands) rather than by email. If the id cannot be
@@ -71,11 +73,20 @@ source ./google_user_id.sh
 source ./ensure_terraform.sh
 # shellcheck source=setup_ui.sh
 source ./setup_ui.sh
+# shellcheck source=migrate_buckets.sh
+source ./migrate_buckets.sh
 
 if ! region="$(region_for "$area")"; then
   exit 2
 fi
-state_bucket="${project_id}-tfstate"
+state_bucket="sharepi-${project_id}-tfstate"
+# Must be the name main.tf derives for the photos bucket.
+photos_bucket="sharepi-${project_id}-photos"
+# The names before the "sharepi-" prefix; buckets under them are copied over.
+old_state_bucket="${project_id}-tfstate"
+old_photos_bucket="${project_id}-photos"
+# The earlier buckets that this run copied, left as they are and named at the end.
+left_behind=""
 
 # Plain text in the log, and no questions from Terraform.
 export TF_IN_AUTOMATION=1
@@ -138,6 +149,20 @@ if ! gcloud storage buckets describe "gs://${state_bucket}" --project="$project_
     --public-access-prevention || ui_fail
   # Keeps the earlier states, so a bad apply can be recovered from.
   ui_run_progress gcloud storage buckets update "gs://${state_bucket}" --versioning || ui_fail
+  # An owner who set up under the earlier name: the state moves with them, or the
+  # next apply would not know what already exists. Only now, when the new bucket
+  # has just been made: a later copy would put the old, stale state over a newer
+  # one. A copy that fails removes the new bucket again, so that running the
+  # command again is a fresh start, never a "finished" bucket with half a state in
+  # it. The lock file is left out: a lock is never something to carry over.
+  if bucket_in_project "$old_state_bucket" && object_exists "$old_state_bucket" "sharepi-backend/default.tfstate"; then
+    echo "setup.sh: copying the state from ${old_state_bucket} to ${state_bucket}" >> "$SP_LOG"
+    if ! ui_run_progress copy_bucket "$old_state_bucket" "$state_bucket" --exclude='.*\.tflock$'; then
+      gcloud storage rm --recursive "gs://${state_bucket}" >> "$SP_LOG" 2>&1 || true
+      ui_fail
+    fi
+    left_behind="${left_behind} ${old_state_bucket}"
+  fi
   created="$(ui_t created)"
 else
   created="$(ui_t already_there)"
@@ -172,7 +197,12 @@ fi
 
 # ---- 6. terraform init
 ui_step "$(ui_t step_init)"
-ui_run_progress terraform init -input=false || ui_fail
+# -reconfigure: use the bucket backend.tf names and nothing else. Without it a
+# checkout that has been used before (a .terraform left behind, or a state file
+# next to it) makes init ask whether to move that state into the bucket, which
+# cannot be answered here and must never be answered yes: it would be another
+# project's state. Moving the state is done on purpose, by migrate_buckets.sh.
+ui_run_progress terraform init -input=false -reconfigure || ui_fail
 ui_done
 
 # ---- 7. terraform apply
@@ -180,7 +210,51 @@ ui_done
 # some parts of Google for a minute or two. That is the only failure worth
 # waiting out; any other error stops at once, and so does a third attempt.
 ui_step "$(ui_t step_apply)"
+
+# A photos bucket under the earlier name is copied to the new one before Terraform
+# switches the backend over, so that the backend never looks at an empty bucket (it
+# would write a new key for the roster in it) and the owner's photos, groups and
+# members come with it. It is ours when Terraform holds it, or when it holds what
+# the backend writes; a bucket that merely has the name is left alone.
+# The earlier bucket is not touched: it stays as the owner's copy. A copy that
+# fails removes the new bucket, so the next run starts again from the same point.
+tracked="$(tracked_photos_bucket || true)"
+if bucket_in_project "$old_photos_bucket" && ! bucket_in_project "$photos_bucket" \
+  && { [ "$tracked" = "$old_photos_bucket" ] || object_exists "$old_photos_bucket" "_backend/secret.json"; }; then
+  ui_t copying
+  echo "setup.sh: copying ${old_photos_bucket} to ${photos_bucket}" >> "$SP_LOG"
+  ui_run_progress gcloud storage buckets create "gs://${photos_bucket}" \
+    --project="$project_id" \
+    --location="$region" \
+    --uniform-bucket-level-access \
+    --public-access-prevention || ui_fail
+  if ! ui_run_progress copy_bucket "$old_photos_bucket" "$photos_bucket"; then
+    gcloud storage rm --recursive "gs://${photos_bucket}" >> "$SP_LOG" 2>&1 || true
+    ui_fail
+  fi
+  left_behind="${left_behind} ${old_photos_bucket}"
+fi
+# Terraform still names the earlier bucket: let go of it (forgetting it in the
+# state does not delete it) and take the new one in, so that the apply changes
+# the backend over instead of trying to replace a bucket full of photos. Done on
+# every run, not only the one that copied, so that a run cut short after the copy
+# is finished by the next.
+if [ "$tracked" = "$old_photos_bucket" ] && bucket_in_project "$photos_bucket"; then
+  echo "setup.sh: the state names ${old_photos_bucket}; moving it to ${photos_bucket}" >> "$SP_LOG"
+  ui_run terraform state rm google_storage_bucket.photos || ui_fail
+  ui_run terraform import -input=false \
+    -var="project_id=${project_id}" \
+    -var="region=${region}" \
+    ${admin_args[@]+"${admin_args[@]}"} \
+    google_storage_bucket.photos "$photos_bucket" || ui_fail
+  case " $left_behind " in
+    *" $old_photos_bucket "*) ;;
+    *) left_behind="${left_behind} ${old_photos_bucket}" ;;
+  esac
+fi
+
 attempt=1
+adopted_photos=0
 while true; do
   mark="$(wc -c < "$SP_LOG" | tr -d ' ')"
   if ui_run_progress terraform apply -auto-approve \
@@ -189,11 +263,34 @@ while true; do
     ${admin_args[@]+"${admin_args[@]}"}; then
     break
   fi
-  if [ "$attempt" -lt 3 ] && tail -c +"$((mark + 1))" "$SP_LOG" | grep -q "SERVICE_DISABLED"; then
+  failure="$(tail -c +"$((mark + 1))" "$SP_LOG")"
+  if [ "$attempt" -lt 3 ] && grep -q "SERVICE_DISABLED" <<< "$failure"; then
     ui_t retrying
     sleep 60
     attempt=$((attempt + 1))
     continue
+  fi
+  # Google can create the photos bucket and lose the answer; Terraform then asks
+  # again and is told "your previous request succeeded and you already own it".
+  # The bucket is there but not in the state, so every further run would fail the
+  # same way. It is ours (we just asked for it), so take it into the state and
+  # carry on: the owner has nothing to do. Once only, so a failing import cannot
+  # loop.
+  if [ "$adopted_photos" -eq 0 ] \
+    && grep -q 'succeeded and you already own it' <<< "$failure" \
+    && grep -q 'with google_storage_bucket.photos,' <<< "$failure"; then
+    adopted_photos=1
+    echo "setup.sh: taking the photos bucket (${photos_bucket}) into the state" >> "$SP_LOG"
+    # The bucket's name is the one main.tf derives from the project (bucket_name
+    # is never passed here).
+    if ui_run terraform import -input=false \
+      -var="project_id=${project_id}" \
+      -var="region=${region}" \
+      ${admin_args[@]+"${admin_args[@]}"} \
+      google_storage_bucket.photos "$photos_bucket"; then
+      ui_t adopting
+      continue
+    fi
   fi
   ui_fail
 done
@@ -215,4 +312,4 @@ backend_url="$(terraform output -raw backend_url 2>> "$SP_LOG")" || ui_fail
 admin_check="$(terraform output -raw administrator_check 2>> "$SP_LOG" || echo "unknown")"
 ui_done
 
-ui_final "$outcome" "$backend_url" "$admin_check"
+ui_final "$outcome" "$backend_url" "$admin_check" "$left_behind"

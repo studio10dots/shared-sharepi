@@ -235,7 +235,10 @@ func eventFromPath(r *http.Request) (id string, ok bool) {
 
 // deleteEvent removes every object under the event. The bucket's soft delete keeps
 // them recoverable for the retention window.
-func (s *Server) deleteEvent(w http.ResponseWriter, r *http.Request, id Identity, g string, _ Member) {
+// deleteEvent soft-deletes an event with everything in it. It removes other
+// members' photos too, so it is the administrator's, except that anyone may
+// delete an event that holds no photo or video yet (one made by mistake).
+func (s *Server) deleteEvent(w http.ResponseWriter, r *http.Request, id Identity, g string, _ Roster, _ *Member) {
 	eid, ok := eventFromPath(r)
 	if !ok {
 		writeErr(w, http.StatusUnprocessableEntity, "invalid event")
@@ -245,6 +248,14 @@ func (s *Server) deleteEvent(w http.ResponseWriter, r *http.Request, id Identity
 	if err != nil {
 		writeErr(w, http.StatusBadGateway, "storage error")
 		return
+	}
+	if !s.isAdmin(id) {
+		for _, o := range l.Objects {
+			if strings.Contains(strings.TrimPrefix(o.Name, eventPrefix(g, eid)), "/") {
+				writeErr(w, http.StatusForbidden, "only the owner may delete an event that holds photos")
+				return
+			}
+		}
 	}
 	var failed bool
 	var mu sync.Mutex
@@ -335,7 +346,13 @@ func (s *Server) listItems(w http.ResponseWriter, r *http.Request, id Identity, 
 }
 
 // deleteItem soft-deletes an item's original, medium and thumbnail.
-func (s *Server) deleteItem(w http.ResponseWriter, r *http.Request, id Identity, g string, _ Member) {
+// deleteItem soft-deletes one photo or video. A member may delete what they
+// uploaded; the backend's administrator may delete anyone's. (Anyone could
+// delete anything before, so one member could empty a group, and the owner would
+// only learn of it when the retention window had run out.) An object with no
+// uploader on it (one from before the uploader was recorded) is the
+// administrator's alone.
+func (s *Server) deleteItem(w http.ResponseWriter, r *http.Request, id Identity, g string, _ Roster, me *Member) {
 	eid, ok := eventFromPath(r)
 	pid := r.PathValue("photo_id")
 	if !ok || !photoIDRe.MatchString(pid) {
@@ -343,7 +360,7 @@ func (s *Server) deleteItem(w http.ResponseWriter, r *http.Request, id Identity,
 		return
 	}
 	pre := eventPrefix(g, eid)
-	orig, err := s.store.List(r.Context(), pre+"original/"+pid+".", "", false)
+	orig, err := s.store.List(r.Context(), pre+"original/"+pid+".", "", true)
 	if err != nil {
 		writeErr(w, http.StatusBadGateway, "storage error")
 		return
@@ -351,6 +368,14 @@ func (s *Server) deleteItem(w http.ResponseWriter, r *http.Request, id Identity,
 	if len(orig.Objects) == 0 {
 		writeErr(w, http.StatusNotFound, "not found")
 		return
+	}
+	if !s.isAdmin(id) {
+		for _, o := range orig.Objects {
+			if me == nil || me.UserID == "" || o.Metadata["uploader"] != me.UserID {
+				writeErr(w, http.StatusForbidden, "only the uploader or the owner may delete this")
+				return
+			}
+		}
 	}
 	names := []string{pre + "medium/" + pid + ".jpg", pre + "thumbnail/" + pid + ".jpg"}
 	for _, o := range orig.Objects {

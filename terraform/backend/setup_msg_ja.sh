@@ -19,6 +19,10 @@ ui_fmt_ja() {
     admin_no_id) printf '%s' "Google のユーザー ID を読み取れなかったため、メールアドレスで判定します" ;;
     admin_no_id_note) printf '%s' "      あとでこのコマンドをもう一度実行すると、ユーザー ID で判定するようになります。\n      または admin_subs を指定します(terraform.tfvars.example を参照)。" ;;
     retrying) printf '%s' " (サービスの準備がまだ終わっていません。60 秒後にやり直します) " ;;
+    adopting) printf '%s' " (前回の実行で作られたものを引き継いで、続けます) " ;;
+    copying) printf '%s' " (データを新しい名前のバケットへコピーしています。時間がかかることがあります) " ;;
+    old_buckets) printf '%s' "以前の名前のバケットは、コピーしたうえで、そのまま残してあります:" ;;
+    old_buckets_delete) printf '%s' "すべて問題なく動くことを確認したら、次のコマンドで削除できます(残しておくと保存料金がかかります):" ;;
     what_happened) printf '%s' "何が起きたか" ;;
     what_to_do) printf '%s' "次にやること" ;;
     last_lines) printf '%s' "このステップが最後に出力した内容:" ;;
@@ -89,8 +93,9 @@ $(ui_t what_to_do)
 EOF
       ;;
     bucket_taken) cat << EOF
-  セットアップの状態を保存するバケットの名前("$p-tfstate")は、すでに別のプロジェクトで
-  使われています。バケット名は、Google Cloud の全員で共有されています。
+  このセットアップが使うバケットの名前("sharepi-$p-tfstate" または
+  "sharepi-$p-photos")が、すでに別のプロジェクトで使われています。
+  バケット名は、Google Cloud の全員で共有されています。
 
 $(ui_t what_to_do)
   バケットに使われたことのない ID のプロジェクトを使ってください。自分のものでない

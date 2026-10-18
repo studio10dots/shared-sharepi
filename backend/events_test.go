@@ -358,7 +358,9 @@ func TestDeleteEventRemovesEverythingUnderItOnly(t *testing.T) {
 	e.st.put(other, 1, nil, testNow) // another group's event of the same id
 
 	want(t, e.do("DELETE", evPath("bbq00001"), "carol", ""), 404)
-	w := e.do("DELETE", evPath("bbq00001"), "alice", "")
+	// A member cannot take other people's photos with the event; the owner can.
+	want(t, e.do("DELETE", evPath("bbq00001"), "alice", ""), 403)
+	w := e.do("DELETE", evPath("bbq00001"), "admin", "")
 	want(t, w, 200)
 	if n := decodeBody[map[string]int](t, w)["deleted"]; n != 6 { // 2 thumbs + 1 medium + 2 originals + event.json
 		t.Errorf("deleted = %d", n)

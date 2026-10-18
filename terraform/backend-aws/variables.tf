@@ -11,7 +11,9 @@ variable "backend_image" {
     AWS Lambda's container support only pulls from ECR, unlike Cloud Run: a
     registry such as Docker Hub or GHCR does not work here. The maintainer's
     published image needs an ECR repository (their own, or the public ECR
-    Gallery) with a policy that allows pulling it across accounts.
+    Gallery) with a policy that allows pulling it across accounts. The image for
+    Lambda is the `aws` target of backend/Dockerfile (`docker build --target aws`),
+    which adds AWS's Lambda Web Adapter to the plain image.
 
     Set exactly one of backend_image and backend_binary. Use backend_binary
     where ECR cannot be used (an organization's service control policy may deny
@@ -116,7 +118,7 @@ variable "memory_size" {
 }
 
 variable "timeout_seconds" {
-  description = "Per-request Lambda timeout. Photo bytes never pass through the backend, so every request is small and quick (Agents.md section 4)."
+  description = "Per-request Lambda timeout. Photo bytes never pass through the backend, so every request is small and quick (docs/BACKEND_DESIGN.md, \"Signed URLs\")."
   type        = number
   default     = 30
 }

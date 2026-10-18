@@ -5,9 +5,13 @@ data "google_project" "this" {
 }
 
 locals {
-  bucket_name = coalesce(var.bucket_name, "${var.project_id}-photos")
+  # "sharepi-" first: the name is plainly ours in the console, and a project ID
+  # that starts with "goog" (which a bucket name may not) cannot spoil it. Keep
+  # it in step with photos_bucket in setup.sh, which copies an earlier
+  # "<project_id>-photos" bucket here.
+  bucket_name = coalesce(var.bucket_name, "sharepi-${var.project_id}-photos")
   # The Web OAuth client ID has one home: config/<environment>.json at the
-  # repository root, the same file the app is built with (Agents.md section 8).
+  # repository root, the same file the app is built with.
   google_client_id = coalesce(
     var.google_client_id,
     jsondecode(file("${path.module}/../../config/${var.environment}.json")).GOOGLE_SIGN_IN_CLIENT_ID,
